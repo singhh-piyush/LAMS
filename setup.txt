@@ -1,21 +1,23 @@
 HOW TO RUN LAMS
 ===============
 
-The full, current instructions are in README.md in this same folder.
+The full instructions are in README.md, at the top under "Running it on your own machine".
 
 Short version:
 
   1. Install Node.js (nodejs.org, LTS) and PostgreSQL (postgresql.org/download).
      Remember the PostgreSQL password you set during install.
 
-  2. Open a terminal in the LAMS folder:
+  2. Clone the repository and open a terminal in the inner LAMS folder - the one
+     with package.json in it:
 
-        cd LAMS
+        git clone https://github.com/singhh-piyush/LAMS.git
+        cd LAMS/LAMS
         npm install
 
   3. Copy .env.example to .env and put your PostgreSQL password in DB_PASSWORD.
 
-        Windows:  copy .env.example .env
+        Windows:   copy .env.example .env
         Mac/Linux: cp .env.example .env
 
   4. Create and fill the database:
@@ -32,11 +34,10 @@ Log in with 25116045 (student) or TECH001 (technician).
 The password for every test account is: Password123
 
 
-NOTE
-----
-The previous version of this file said to create the database by hand in pgAdmin and
-paste the SQL into a Query Tool. That still works, but "npm run setup-db" does both
-steps for you and is less error-prone. If you would rather do it manually:
+DOING THE DATABASE BY HAND
+--------------------------
+"npm run setup-db" does both steps for you and is less error-prone, but if you would
+rather do it yourself:
 
   - create a database called lams_db
   - open a Query Tool against it
@@ -46,7 +47,8 @@ steps for you and is less error-prone. If you would rather do it manually:
 TROUBLESHOOTING
 ---------------
 "Cannot find module 'express'"
-    You skipped step 2. Run npm install inside the LAMS folder.
+    You skipped step 2, or ran npm install in the wrong folder. It belongs in the
+    inner LAMS folder, next to package.json.
 
 "Could not connect to PostgreSQL"
     PostgreSQL is not running, or DB_USER / DB_PASSWORD in .env are wrong.
@@ -56,3 +58,6 @@ TROUBLESHOOTING
 
 Port 3000 already in use
     Change PORT in .env, and BASE_URL to match.
+
+The page loads but every list is empty
+    The database exists but was never filled. Run npm run setup-db.

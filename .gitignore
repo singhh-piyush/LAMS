@@ -1,0 +1,23 @@
+# Dependencies - reinstalled with "npm install", never committed.
+node_modules/
+
+# Secrets. Copy LAMS/.env.example to LAMS/.env and put your own values there;
+# .env stays on your machine and must never be committed.
+.env
+.env.local
+*.local
+
+# Editor / OS noise
+.vscode/
+.idea/
+.DS_Store
+Thumbs.db
+*.swp
+
+# Logs and scratch files
+*.log
+npm-debug.log*
+dir
+
+# Old copies of the app that are not part of the submission
+updated/

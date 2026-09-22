@@ -162,6 +162,8 @@ function loadStudentDashboard() {
             document.getElementById('reservationCount').textContent = data.reservations || 0;
             document.getElementById('totalBorrowedCount').textContent = data.totalBorrowed || 0;
 
+            renderMyFines(data.finesList);
+
             const tbody = document.getElementById('studentLoansTable');
             tbody.innerHTML = '';
 
@@ -190,6 +192,31 @@ function loadStudentDashboard() {
         .catch(err => console.error('Student dashboard error:', err));
 
     loadMyReservations();
+}
+
+// What each fine is actually for. The tile above only shows what is still owed,
+// so paid fines are listed here too - otherwise a student has no record of them.
+function renderMyFines(list) {
+    const tbody = document.getElementById('myFinesTable');
+    if (!tbody) return;
+
+    tbody.innerHTML = '';
+    if (!list || list.length === 0) {
+        return emptyRow(tbody, 5, 'No fines');
+    }
+
+    list.forEach(fine => {
+        const row = document.createElement('tr');
+        row.innerHTML =
+            '<td>' + esc(fine.assetname) + '</td>' +
+            '<td>' + esc(fine.reason || '') + '</td>' +
+            '<td>' + shortDate(fine.finedate) + '</td>' +
+            '<td class="num">' + money(fine.fineamount) + '</td>' +
+            '<td>' + (fine.paid
+                ? '<span class="status-badge available">Paid ' + shortDate(fine.paiddate) + '</span>'
+                : '<span class="status-badge overdue">Unpaid</span>') + '</td>';
+        tbody.appendChild(row);
+    });
 }
 
 // The student's own reservations: what they booked, for when, and whether it
@@ -742,16 +769,21 @@ function fetchRows(path, view, emptyMessage) {
             document.getElementById(view.count).textContent =
                 data.rowCount + (data.rowCount === 1 ? ' record' : ' records');
 
+            // Only the fines table sends an action; reports and every other table
+            // leave it null and render exactly as before.
+            const action = data.action || null;
+            const columnCount = data.columns.length + (action ? 1 : 0);
+
             const head = document.getElementById(view.head);
             head.innerHTML = '<tr>' + data.columns.map(c =>
                 '<th' + (c.numeric ? ' class="num"' : '') + '>' + esc(c.name) + '</th>'
-            ).join('') + '</tr>';
+            ).join('') + (action ? '<th></th>' : '') + '</tr>';
 
             const body = document.getElementById(view.body);
             body.innerHTML = '';
 
             if (data.rows.length === 0) {
-                return emptyRow(body, data.columns.length, emptyMessage);
+                return emptyRow(body, columnCount, emptyMessage);
             }
 
             data.rows.forEach(row => {
@@ -759,11 +791,35 @@ function fetchRows(path, view, emptyMessage) {
                 tr.innerHTML = data.columns.map(c =>
                     '<td' + (c.numeric ? ' class="num"' : '') + '>' +
                     formatCell(row[c.name], c) + '</td>'
-                ).join('');
+                ).join('') + (action ? actionCell(action, row) : '');
                 body.appendChild(tr);
             });
         })
         .catch(err => console.error('Result error:', err));
+}
+
+// The button at the end of an actionable row. A row that fails the enabledWhen
+// test still gets a cell, so the columns stay lined up - it just has nothing in it.
+function actionCell(action, row) {
+    const test = action.enabledWhen;
+    if (test && String(row[test.column]) !== test.equals) return '<td></td>';
+
+    return '<td><div class="row-actions">' +
+        '<button type="button" class="action-btn btn-small" onclick="' +
+        esc(action.handler) + '(' + Number(row[action.idColumn]) + ')">' +
+        esc(action.label) + '</button></div></td>';
+}
+
+// Mark a fine as paid, then reload the table so the row moves to Settled.
+function settleFine(fineId) {
+    if (!confirm('Mark this fine as paid?')) return;
+
+    apiJson('/fines/' + fineId + '/pay', 'POST', {})
+        .then(data => {
+            showAlert(data.message || data.error, data.success ? 'success' : 'error');
+            if (data.success) runTableQuery();
+        })
+        .catch(err => console.error('Settle fine error:', err));
 }
 
 // Dates arrive as ISO strings and money as numeric strings; show both the way
@@ -1052,12 +1108,24 @@ function togglePassword(inputId, button) {
     input.focus();
 }
 
+// The alert sits at the top of the page, so when the technician is working further
+// down - the Awaiting Collection and Process a Return tables are both below the
+// fold - a message could appear and time out again without ever being seen. It is
+// scrolled into view, and an error stays put until the next action replaces it.
+// Successes still clear themselves, since nothing is lost by missing one.
+let alertTimer = null;
+
 function showAlert(message, type) {
     const alert = document.getElementById('appAlert');
     alert.textContent = message;
     alert.className = 'alert ' + type;
     alert.style.display = 'block';
-    setTimeout(() => { alert.style.display = 'none'; }, 4000);
+    alert.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+
+    clearTimeout(alertTimer);
+    if (type !== 'error') {
+        alertTimer = setTimeout(() => { alert.style.display = 'none'; }, 4000);
+    }
 }
 
 // ===========================================================================

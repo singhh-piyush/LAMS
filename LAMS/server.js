@@ -8,7 +8,6 @@ loadEnv();
 const express = require('express');
 const session = require('express-session');
 const { Pool } = require('pg');
-const cors = require('cors');
 const bcrypt = require('bcryptjs');
 const crypto = require('crypto');
 const path = require('path');
@@ -17,7 +16,8 @@ const { sendMail, MODE: MAIL_MODE } = require('./mailer');
 const app = express();
 const PORT = parseInt(process.env.PORT || '3000', 10);
 const BASE_URL = process.env.BASE_URL || `http://localhost:${PORT}`;
-const LOAN_DAYS = 7;   // business rule: a loan runs for seven days
+const LOAN_DAYS = 7;      // business rule: a loan runs for seven days
+const FINE_PER_DAY = 5;   // business rule: R5 for every day an item is late
 
 // ============================================================================
 // DATABASE
@@ -35,7 +35,11 @@ pool.on('error', (err) => console.error('Unexpected database error:', err.messag
 // ============================================================================
 // MIDDLEWARE
 // ============================================================================
-app.use(cors({ origin: true, credentials: true }));
+// There is no CORS middleware here on purpose. The pages in public/ are served by
+// this same server and call it with relative URLs, so every request is same-origin.
+// The old cors({ origin: true, credentials: true }) reflected whatever Origin it was
+// sent and allowed credentials with it, which is the one combination the CORS spec
+// tells you not to use.
 app.use(express.json());
 app.use(session({
     secret: process.env.SESSION_SECRET || 'lams-dev-secret-change-me',
@@ -43,7 +47,11 @@ app.use(session({
     saveUninitialized: false,
     cookie: { httpOnly: true, maxAge: 1000 * 60 * 60 * 8 }   // 8 hours
 }));
-app.use(express.static(__dirname));
+
+// The pages live in public/ and are served from there. Serving __dirname instead
+// would hand out server.js, mailer.js and setup-db.js as plain text to anyone who
+// asked for them by name.
+app.use(express.static(path.join(__dirname, 'public')));
 
 // Only a logged-in user may continue.
 function requireAuth(req, res, next) {
@@ -64,6 +72,48 @@ function requireTechnician(req, res, next) {
         return res.status(403).json({ error: 'Technicians only' });
     }
     next();
+}
+
+// ============================================================================
+// SHARED CHECKS
+// ============================================================================
+
+// An id out of the URL is always a string. Anything that is not a whole number
+// reaches Postgres as an invalid integer and comes back as a 500, so it is turned
+// away here and the caller gets a message instead of a crash.
+function toId(value) {
+    return /^\d+$/.test(String(value)) ? Number(value) : null;
+}
+
+// A date filter typed by hand, or sent straight to the API, has to look like a
+// date before it is bound - otherwise the cast fails inside Postgres and the whole
+// request 500s.
+function isDateString(value) {
+    return /^\d{4}-\d{2}-\d{2}$/.test(String(value)) && !isNaN(Date.parse(value));
+}
+
+// Used by both the add and the edit route so the two cannot drift apart. Returns
+// an error string, or null when the values are usable. These are the same limits
+// the column widths and CHECK constraints enforce; catching them here turns a
+// database error into something the technician can actually act on.
+function validateAssetInput(input) {
+    const { serialNumber, assetName, categoryId, roomId, cost } = input;
+
+    if (!serialNumber || !assetName || !categoryId || !roomId) {
+        return 'Serial number, name, category and lab are all required';
+    }
+    if (String(serialNumber).trim().length > 100) {
+        return 'Serial number is too long - 100 characters at most';
+    }
+    if (String(assetName).trim().length > 150) {
+        return 'Asset name is too long - 150 characters at most';
+    }
+    if (cost !== '' && cost != null) {
+        const amount = Number(cost);
+        if (!Number.isFinite(amount)) return 'Cost must be a number';
+        if (amount < 0) return 'Cost cannot be negative';
+    }
+    return null;
 }
 
 // ============================================================================
@@ -152,13 +202,19 @@ app.post('/api/forgot-password', async (req, res) => {
             // so a copy of the database cannot be used to reset anyone's password.
             const token = crypto.randomBytes(32).toString('hex');
             const tokenHash = crypto.createHash('sha256').update(token).digest('hex');
-            const expires = new Date(Date.now() + 60 * 60 * 1000);   // 1 hour
 
             // Any earlier unused tokens for this user stop working.
             await pool.query('DELETE FROM passwordreset WHERE userid = $1', [user.userid]);
+
+            // The database works out the expiry, not Node. ExpiresAt is a TIMESTAMP
+            // WITHOUT TIME ZONE and the checks against it use CURRENT_TIMESTAMP, so a
+            // JavaScript Date sent from a machine that is not on UTC lands in the
+            // column already shifted by that machine's offset - two hours here, which
+            // turned the promised one hour into three.
             await pool.query(
-                'INSERT INTO passwordreset (tokenhash, userid, expiresat) VALUES ($1, $2, $3)',
-                [tokenHash, user.userid, expires]
+                "INSERT INTO passwordreset (tokenhash, userid, expiresat)" +
+                " VALUES ($1, $2, NOW() + INTERVAL '1 hour')",
+                [tokenHash, user.userid]
             );
 
             const link = `${BASE_URL}/reset.html?token=${token}`;
@@ -328,9 +384,8 @@ app.get('/api/lookups', requireAuth, async (req, res) => {
 app.post('/api/assets', requireTechnician, async (req, res) => {
     const { serialNumber, assetName, categoryId, roomId, condition, cost } = req.body;
 
-    if (!serialNumber || !assetName || !categoryId || !roomId) {
-        return res.json({ success: false, error: 'Serial number, name, category and lab are all required' });
-    }
+    const problem = validateAssetInput(req.body);
+    if (problem) return res.json({ success: false, error: problem });
 
     try {
         const result = await pool.query(
@@ -363,9 +418,11 @@ app.post('/api/assets', requireTechnician, async (req, res) => {
 app.put('/api/assets/:id', requireTechnician, async (req, res) => {
     const { serialNumber, assetName, categoryId, roomId, condition, cost } = req.body;
 
-    if (!serialNumber || !assetName || !categoryId || !roomId) {
-        return res.json({ success: false, error: 'Serial number, name, category and lab are all required' });
-    }
+    const assetId = toId(req.params.id);
+    if (assetId === null) return res.json({ success: false, error: 'Asset not found' });
+
+    const problem = validateAssetInput(req.body);
+    if (problem) return res.json({ success: false, error: problem });
 
     try {
         const result = await pool.query(
@@ -376,7 +433,7 @@ app.put('/api/assets/:id', requireTechnician, async (req, res) => {
              RETURNING assetname`,
             [serialNumber.trim(), assetName.trim(), categoryId, roomId,
              condition || 'Good', cost === '' || cost == null ? null : cost,
-             req.params.id]
+             assetId]
         );
 
         if (result.rows.length === 0) {
@@ -554,8 +611,20 @@ app.post('/api/reservation/create', requireAuth, async (req, res) => {
     const { assetId, desiredPickupDate } = req.body;
     const userId = req.session.user.userId;   // taken from the session, never from the request body
 
-    if (!assetId || !desiredPickupDate) {
+    const id = toId(assetId);
+    if (id === null || !desiredPickupDate) {
         return res.json({ success: false, error: 'Please choose a pickup date' });
+    }
+
+    // The date picker sets a min attribute, but that only stops the form. Anything
+    // posted straight to the API would sail past it, which is how a reservation
+    // ended up dated 1990.
+    if (!isDateString(desiredPickupDate)) {
+        return res.json({ success: false, error: 'That pickup date is not a valid date' });
+    }
+    const today = new Date().toISOString().slice(0, 10);
+    if (desiredPickupDate < today) {
+        return res.json({ success: false, error: 'The pickup date cannot be in the past' });
     }
 
     const client = await pool.connect();
@@ -564,7 +633,7 @@ app.post('/api/reservation/create', requireAuth, async (req, res) => {
 
         const asset = await client.query(
             'SELECT status, assetname FROM asset WHERE assetid = $1 FOR UPDATE',
-            [assetId]
+            [id]
         );
         if (asset.rows.length === 0) {
             await client.query('ROLLBACK');
@@ -579,9 +648,9 @@ app.post('/api/reservation/create', requireAuth, async (req, res) => {
         await client.query(
             `INSERT INTO reservation (assetid, userid, requestedpickupdate, status)
              VALUES ($1, $2, $3, 'Pending')`,
-            [assetId, userId, desiredPickupDate]
+            [id, userId, desiredPickupDate]
         );
-        await client.query("UPDATE asset SET status = 'Reserved' WHERE assetid = $1", [assetId]);
+        await client.query("UPDATE asset SET status = 'Reserved' WHERE assetid = $1", [id]);
 
         await client.query('COMMIT');
         res.json({
@@ -816,17 +885,23 @@ app.post('/api/technician/checkout', requireTechnician, async (req, res) => {
 app.post('/api/technician/return', requireTechnician, async (req, res) => {
     const { loanId, conditionOnReturn } = req.body;
 
-    if (!loanId) return res.json({ success: false, error: 'Loan ID is required' });
+    const id = toId(loanId);
+    if (id === null) return res.json({ success: false, error: 'Loan ID is required' });
 
     const client = await pool.connect();
     try {
         await client.query('BEGIN');
 
+        // Postgres works out how late the item is, for the same reason the reset
+        // token expiry does: CURRENT_DATE and DueDate are both the database's,
+        // so the answer does not change with the time zone of whoever is running
+        // the server.
         const loanResult = await client.query(
-            `SELECT l.loanid, l.assetid, l.duedate, a.assetname
+            `SELECT l.loanid, l.assetid, l.duedate, a.assetname,
+                    GREATEST(0, CURRENT_DATE - l.duedate) AS dayslate
              FROM loan l JOIN asset a ON a.assetid = l.assetid
              WHERE l.loanid = $1 AND l.returndate IS NULL`,
-            [loanId]
+            [id]
         );
         if (loanResult.rows.length === 0) {
             await client.query('ROLLBACK');
@@ -851,15 +926,30 @@ app.post('/api/technician/return', requireTechnician, async (req, res) => {
             );
         }
 
+        // A late return raises a fine, inside the same transaction as the return
+        // itself - so an item is never recorded as back without the fine that goes
+        // with it. The wording matches the fines already in the database.
+        const daysLate = Number(loan.dayslate) || 0;
+        let fine = 0;
+        if (daysLate > 0) {
+            fine = daysLate * FINE_PER_DAY;
+            await client.query(
+                `INSERT INTO fine (loanid, fineamount, finedate, reason, paid)
+                 VALUES ($1, $2, CURRENT_DATE, $3, FALSE)`,
+                [loan.loanid, fine, `Late return - ${daysLate} days`]
+            );
+        }
+
         await client.query('COMMIT');
 
-        const daysLate = Math.max(0, Math.floor(
-            (Date.now() - new Date(loan.duedate).getTime()) / 86400000
-        ));
         res.json({
             success: true,
-            message: `${loan.assetname} returned` + (daysLate > 0 ? ` (${daysLate} day(s) late)` : ''),
-            daysLate
+            message: `${loan.assetname} returned` +
+                     (daysLate > 0
+                        ? ` (${daysLate} day(s) late - R ${fine.toFixed(2)} fine raised)`
+                        : ''),
+            daysLate,
+            fine
         });
     } catch (error) {
         await client.query('ROLLBACK');
@@ -867,6 +957,41 @@ app.post('/api/technician/return', requireTechnician, async (req, res) => {
         res.status(500).json({ success: false, error: 'Return failed' });
     } finally {
         client.release();
+    }
+});
+
+// Mark a fine as settled. The WHERE clause carries the Paid = FALSE test, so two
+// technicians clicking at the same time cannot both record a payment - the second
+// one updates no rows and is told the fine was already settled.
+app.post('/api/fines/:id/pay', requireTechnician, async (req, res) => {
+    const fineId = toId(req.params.id);
+    if (fineId === null) return res.json({ success: false, error: 'Fine not found' });
+
+    try {
+        const result = await pool.query(
+            `UPDATE fine SET paid = TRUE, paiddate = CURRENT_DATE
+             WHERE fineid = $1 AND paid = FALSE
+             RETURNING fineid, fineamount`,
+            [fineId]
+        );
+
+        if (result.rows.length === 0) {
+            const exists = await pool.query('SELECT paid FROM fine WHERE fineid = $1', [fineId]);
+            return res.json({
+                success: false,
+                error: exists.rows.length === 0
+                    ? 'Fine not found'
+                    : 'That fine has already been settled'
+            });
+        }
+
+        res.json({
+            success: true,
+            message: `Fine of R ${Number(result.rows[0].fineamount).toFixed(2)} marked as paid`
+        });
+    } catch (error) {
+        console.error('Settle fine error:', error.message);
+        res.status(500).json({ success: false, error: 'Could not settle the fine' });
     }
 });
 
@@ -897,6 +1022,19 @@ app.get('/api/student/dashboard', requireAuth, async (req, res) => {
             WHERE l.userid = $1 AND f.paid = FALSE
         `, [userId]);
 
+        // The total on its own does not tell a student what they are being charged
+        // for, and a fine that has been paid disappeared from their view entirely.
+        // This is the itemised list behind that number, settled ones included.
+        const fineList = await pool.query(`
+            SELECT f.fineid, f.fineamount, f.finedate, f.reason, f.paid, f.paiddate,
+                   a.assetname
+            FROM fine f
+            JOIN loan l  ON f.loanid  = l.loanid
+            JOIN asset a ON l.assetid = a.assetid
+            WHERE l.userid = $1
+            ORDER BY f.paid ASC, f.finedate DESC
+        `, [userId]);
+
         const totals = await pool.query(
             'SELECT COUNT(*) AS totalborrowed FROM loan WHERE userid = $1', [userId]
         );
@@ -910,6 +1048,7 @@ app.get('/api/student/dashboard', requireAuth, async (req, res) => {
             activeLoans: activeLoans.rows.length,
             activeLoansList: activeLoans.rows,
             fines: parseFloat(fines.rows[0].totalfines) || 0,
+            finesList: fineList.rows,
             totalBorrowed: parseInt(totals.rows[0].totalborrowed, 10) || 0,
             reservations: parseInt(reservations.rows[0].c, 10) || 0
         });
@@ -1099,7 +1238,7 @@ app.get('/api/reports/:key', requireTechnician, async (req, res) => {
         });
     } catch (error) {
         console.error(`Report "${req.params.key}" failed:`, error.message);
-        res.status(500).json({ error: 'Report failed: ' + error.message });
+        res.status(500).json({ error: 'Could not run that report' });
     }
 });
 
@@ -1260,7 +1399,17 @@ JOIN Users u ON l.UserID  = u.UserID`,
               where: `(u.StudentNumber ILIKE $$ OR u.FirstName ILIKE $$ OR u.LastName ILIKE $$
                OR f.Reason ILIKE $$)` }
         ],
-        orderBy: 'f.FineDate DESC, f.FineID DESC'
+        orderBy: 'f.FineDate DESC, f.FineID DESC',
+
+        // Fines are the one thing a technician settles from this screen, so this
+        // table gets an action column. The id and the test both name columns that
+        // the select above already returns.
+        action: {
+            label: 'Settle',
+            handler: 'settleFine',
+            idColumn: 'ID',
+            enabledWhen: { column: 'Settled', equals: 'Unpaid' }
+        }
     },
 
     maintenance: {
@@ -1342,6 +1491,13 @@ function buildTableQuery(table, query) {
         if (raw === undefined || raw === null || String(raw).trim() === '') return;
 
         const value = String(raw).trim();
+
+        // A date filter is cast to a date by Postgres. If the value is not shaped
+        // like one the cast throws and the whole request 500s, so an unusable date
+        // is dropped rather than sent. Injection is not the worry here - the value
+        // is still bound as a parameter either way - it is simply a crash.
+        if (filter.type === 'date' && !isDateString(value)) return;
+
         params.push(filter.type === 'search' ? `%${value}%` : value);
         conditions.push(filter.where.replace(/\$\$/g, '$' + params.length));
     });
@@ -1407,7 +1563,10 @@ app.get('/api/tables/:key', requireTechnician, async (req, res) => {
                 money: MONEY_TYPES.has(f.dataTypeID)
             })),
             rows: result.rows,
-            rowCount: result.rowCount
+            rowCount: result.rowCount,
+            // Only the fines table sets this. The browser draws a button from it,
+            // so the table stays a plain list everywhere else.
+            action: table.action || null
         });
     } catch (error) {
         console.error(`Table "${req.params.key}" failed:`, error.message);
