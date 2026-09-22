@@ -291,7 +291,7 @@ app.get('/api/assets/available', requireAuth, async (req, res) => {
 app.get('/api/inventory', requireAuth, async (req, res) => {
     try {
         const result = await pool.query(`
-            SELECT a.assetid, a.assetname, a.serialnumber, a.condition, a.status,
+            SELECT a.assetid, a.assetname, a.serialnumber, a.condition, a.status, a.cost,
                    ac.categoryname, r.roomname,
                    l.loanid,
                    u.firstname || ' ' || u.lastname AS checkedoutto,
@@ -310,6 +310,142 @@ app.get('/api/inventory', requireAuth, async (req, res) => {
     }
 });
 
+// Categories and rooms with their IDs, for the add/edit asset dropdowns.
+app.get('/api/lookups', requireAuth, async (req, res) => {
+    try {
+        const categories = await pool.query(
+            'SELECT categoryid, categoryname FROM assetcategory ORDER BY categoryname');
+        const rooms = await pool.query(
+            'SELECT roomid, roomname FROM room ORDER BY roomname');
+        res.json({ categories: categories.rows, rooms: rooms.rows });
+    } catch (error) {
+        console.error('Lookups error:', error.message);
+        res.status(500).json({ error: 'Failed to load lookups' });
+    }
+});
+
+// Add a new asset.
+app.post('/api/assets', requireTechnician, async (req, res) => {
+    const { serialNumber, assetName, categoryId, roomId, condition, cost } = req.body;
+
+    if (!serialNumber || !assetName || !categoryId || !roomId) {
+        return res.json({ success: false, error: 'Serial number, name, category and lab are all required' });
+    }
+
+    try {
+        const result = await pool.query(
+            `INSERT INTO asset (serialnumber, assetname, categoryid, roomid, condition, cost,
+                                acquisitiondate, status)
+             VALUES ($1, $2, $3, $4, $5, $6, CURRENT_DATE, 'Available')
+             RETURNING assetid, assetname`,
+            [serialNumber.trim(), assetName.trim(), categoryId, roomId,
+             condition || 'Good', cost === '' || cost == null ? null : cost]
+        );
+        res.json({ success: true, message: `${result.rows[0].assetname} added to the inventory` });
+    } catch (error) {
+        if (error.code === '23505') {
+            return res.json({ success: false, error: 'An asset with that serial number already exists' });
+        }
+        if (error.code === '23503') {
+            return res.json({ success: false, error: 'That category or lab does not exist' });
+        }
+        if (error.code === '23514') {
+            return res.json({ success: false, error: 'That condition is not a valid value' });
+        }
+        console.error('Add asset error:', error.message);
+        res.status(500).json({ success: false, error: 'Could not add the asset' });
+    }
+});
+
+// Update an asset's details. Status is deliberately not editable here - it is
+// driven by loans and reservations, so letting it be typed in by hand is what
+// would put the asset table and the loan table out of step.
+app.put('/api/assets/:id', requireTechnician, async (req, res) => {
+    const { serialNumber, assetName, categoryId, roomId, condition, cost } = req.body;
+
+    if (!serialNumber || !assetName || !categoryId || !roomId) {
+        return res.json({ success: false, error: 'Serial number, name, category and lab are all required' });
+    }
+
+    try {
+        const result = await pool.query(
+            `UPDATE asset
+             SET serialnumber = $1, assetname = $2, categoryid = $3,
+                 roomid = $4, condition = $5, cost = $6
+             WHERE assetid = $7
+             RETURNING assetname`,
+            [serialNumber.trim(), assetName.trim(), categoryId, roomId,
+             condition || 'Good', cost === '' || cost == null ? null : cost,
+             req.params.id]
+        );
+
+        if (result.rows.length === 0) {
+            return res.json({ success: false, error: 'Asset not found' });
+        }
+        res.json({ success: true, message: `${result.rows[0].assetname} updated` });
+    } catch (error) {
+        if (error.code === '23505') {
+            return res.json({ success: false, error: 'Another asset already uses that serial number' });
+        }
+        if (error.code === '23503') {
+            return res.json({ success: false, error: 'That category or lab does not exist' });
+        }
+        if (error.code === '23514') {
+            return res.json({ success: false, error: 'That condition is not a valid value' });
+        }
+        console.error('Update asset error:', error.message);
+        res.status(500).json({ success: false, error: 'Could not update the asset' });
+    }
+});
+
+// Retire an asset. Equipment is never deleted: a loan row references the asset,
+// so deleting it would either fail or destroy the borrowing history. Retiring
+// marks it Decommissioned and keeps every past loan intact.
+app.post('/api/assets/:id/retire', requireTechnician, async (req, res) => {
+    const client = await pool.connect();
+    try {
+        await client.query('BEGIN');
+
+        const asset = await client.query(
+            'SELECT assetid, assetname, status FROM asset WHERE assetid = $1 FOR UPDATE',
+            [req.params.id]
+        );
+        if (asset.rows.length === 0) {
+            await client.query('ROLLBACK');
+            return res.json({ success: false, error: 'Asset not found' });
+        }
+
+        const a = asset.rows[0];
+        if (a.status === 'Decommissioned') {
+            await client.query('ROLLBACK');
+            return res.json({ success: false, error: `${a.assetname} is already retired` });
+        }
+        if (a.status === 'Checked Out') {
+            await client.query('ROLLBACK');
+            return res.json({ success: false, error: `${a.assetname} is on loan - take the return first` });
+        }
+
+        // A retired item must not stay booked for somebody.
+        await client.query(
+            "UPDATE reservation SET status = 'Cancelled' WHERE assetid = $1 AND status IN ('Pending','Confirmed')",
+            [a.assetid]
+        );
+        await client.query(
+            "UPDATE asset SET status = 'Decommissioned', condition = 'Decommissioned' WHERE assetid = $1",
+            [a.assetid]
+        );
+
+        await client.query('COMMIT');
+        res.json({ success: true, message: `${a.assetname} retired. Its loan history is kept.` });
+    } catch (error) {
+        await client.query('ROLLBACK');
+        console.error('Retire asset error:', error.message);
+        res.status(500).json({ success: false, error: 'Could not retire the asset' });
+    } finally {
+        client.release();
+    }
+});
+
 // ============================================================================
 // OVERDUE (technician only - it exposes every student's contact details)
 // ============================================================================
@@ -319,7 +455,7 @@ app.get('/api/overdue', requireTechnician, async (req, res) => {
             SELECT l.loanid, l.duedate,
                    CURRENT_DATE - l.duedate AS daysoverdue,
                    a.assetname, a.serialnumber,
-                   u.studentnumber, u.phonenumber,
+                   u.studentnumber, u.phonenumber, u.email,
                    u.firstname || ' ' || u.lastname AS studentname,
                    COALESCE(SUM(f.fineamount) FILTER (WHERE f.paid = FALSE), 0) AS fineamount
             FROM loan l
@@ -328,13 +464,72 @@ app.get('/api/overdue', requireTechnician, async (req, res) => {
             LEFT JOIN fine f ON l.loanid = f.loanid
             WHERE l.returndate IS NULL AND l.duedate < CURRENT_DATE
             GROUP BY l.loanid, l.duedate, a.assetname, a.serialnumber,
-                     u.studentnumber, u.phonenumber, u.firstname, u.lastname
+                     u.studentnumber, u.phonenumber, u.email, u.firstname, u.lastname
             ORDER BY l.duedate ASC
         `);
         res.json(result.rows);
     } catch (error) {
         console.error('Overdue error:', error.message);
         res.status(500).json({ error: 'Failed to fetch overdue items' });
+    }
+});
+
+// Email an overdue reminder to the student holding the item.
+// The technician presses one button; the message is built from the loan row.
+app.post('/api/overdue/:loanId/notify', requireTechnician, async (req, res) => {
+    try {
+        const result = await pool.query(`
+            SELECT u.firstname, u.email,
+                   a.assetname, a.serialnumber,
+                   r.roomname,
+                   l.duedate,
+                   CURRENT_DATE - l.duedate AS daysoverdue,
+                   COALESCE(SUM(f.fineamount) FILTER (WHERE f.paid = FALSE), 0) AS fineamount
+            FROM loan l
+            JOIN asset a ON l.assetid = a.assetid
+            JOIN room r  ON a.roomid  = r.roomid
+            JOIN users u ON l.userid  = u.userid
+            LEFT JOIN fine f ON l.loanid = f.loanid
+            WHERE l.loanid = $1 AND l.returndate IS NULL AND l.duedate < CURRENT_DATE
+            GROUP BY u.firstname, u.email, a.assetname, a.serialnumber, r.roomname, l.duedate
+        `, [req.params.loanId]);
+
+        if (result.rows.length === 0) {
+            return res.json({ success: false, error: 'That loan is not overdue' });
+        }
+
+        const row = result.rows[0];
+        const due = new Date(row.duedate).toLocaleDateString('en-ZA');
+        const fine = Number(row.fineamount) || 0;
+
+        const lines = [
+            `Dear ${row.firstname},`,
+            '',
+            'The following item is overdue and needs to be returned:',
+            '',
+            `Item:      ${row.assetname}`,
+            `Asset tag: ${row.serialnumber}`,
+            `Due date:  ${due} (${row.daysoverdue} days late)`
+        ];
+        if (fine > 0) lines.push(`Fine so far: R ${fine.toFixed(2)}`);
+        lines.push(
+            '',
+            `Please bring it back to the ${row.roomname} as soon as you can.`,
+            '',
+            'Laboratory Asset Management System',
+            'Department of Information Systems'
+        );
+
+        await sendMail({
+            to: row.email,
+            subject: `Overdue equipment: ${row.serialnumber}`,
+            text: lines.join('\n')
+        });
+
+        res.json({ success: true, message: `Reminder sent to ${row.firstname} (${row.email})` });
+    } catch (error) {
+        console.error('Overdue reminder error:', error.message);
+        res.status(500).json({ success: false, error: 'Could not send the reminder' });
     }
 });
 

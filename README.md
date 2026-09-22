@@ -106,7 +106,7 @@ Switching provider is a `.env` change only — no code changes.
 | File | What it is |
 |---|---|
 | `lams_database_setup.sql` | Schema, constraints, views and seed data. The DTMG deliverable. |
-| `LAMS/server.js` | Express API — login, assets, loans, reports, password reset |
+| `LAMS/server.js` | Express API — login, assets, loans, reservations, reports, email |
 | `LAMS/app.js` | Front-end logic |
 | `LAMS/index.html` | Login page and the main application |
 | `LAMS/reset.html` | The page the password-reset email links to |
@@ -138,6 +138,30 @@ The **Walk-in checkout** form at the bottom of that tab is the exception: it is 
 who turns up without having reserved anything. Trying to use it on an item that is already
 reserved is refused and points you at the Awaiting Collection list, so a reservation can never
 be left hanging as `Pending` after the item has gone out.
+
+## Managing the inventory
+
+The **Inventory** tab is read-only for students. A technician also gets:
+
+- an **Add Asset** form above the table, with Category and Lab chosen from dropdowns
+- **Edit** on each row, for the name, serial number, category, lab, condition and cost
+- **Retire** on each row
+
+Status is deliberately not editable by hand. It is driven by loans and reservations, and
+letting it be typed in is exactly what would put `asset.status` and the `loan` table out of
+step with each other.
+
+**Retire, not delete.** Equipment is never removed from the database. A `loan` row references
+the asset with `ON DELETE RESTRICT`, so deleting anything ever borrowed would either fail or
+destroy the borrowing history. Retiring sets the status to `Decommissioned`, cancels any
+active reservation on it, and keeps every past loan and fine intact — the item simply stops
+being issuable. An item that is currently on loan cannot be retired until it comes back.
+
+## Chasing overdue items
+
+Each row of **Overdue Loans & Fines** has an **Email Student** button. The technician
+confirms, and the reminder is built from the loan row and sent through the same mail
+transport as the password reset, so during the demo it lands in the Mailtrap inbox.
 
 ## Reports
 
@@ -175,7 +199,8 @@ other students' details. The SQL for each one is in `LAMS/server.js`, in the `RE
 ## Known limitations
 
 - Fines are recorded, not collected — there is no payment integration.
-- No email or SMS chasing of overdue items; the technician phones the number on screen.
+- Overdue reminders are emailed from the Overdue Loans & Fines table, one button per loan.
+  There is no SMS, and no record is kept of which reminders were sent.
 - `asset.status` duplicates what the loan table already implies. It is kept for speed, and
   the partial unique index above is what stops the two disagreeing.
 - Sessions are held in memory, so restarting the server logs everyone out.

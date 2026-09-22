@@ -266,7 +266,7 @@ function loadTechnicianDashboard() {
             tbody.innerHTML = '';
 
             if (!Array.isArray(data) || data.length === 0) {
-                return emptyRow(tbody, 7, 'Nothing overdue');
+                return emptyRow(tbody, 8, 'Nothing overdue');
             }
 
             data.forEach(item => {
@@ -279,11 +279,30 @@ function loadTechnicianDashboard() {
                     '<td>' + esc(item.assetname) + '</td>' +
                     '<td>' + shortDate(item.duedate) +
                         ' <small>(' + esc(item.daysoverdue) + ' days)</small></td>' +
-                    '<td>' + money(item.fineamount) + '</td>';
+                    '<td>' + money(item.fineamount) + '</td>' +
+                    '<td><button type="button" class="action-btn btn-reserve" ' +
+                        'onclick="emailStudent(' + item.loanid + ', \'' +
+                        esc(item.studentname) + '\')">Email Student</button></td>';
                 tbody.appendChild(row);
             });
         })
         .catch(err => console.error('Overdue error:', err));
+}
+
+// Send the student an overdue reminder. The technician confirms first, since
+// this puts a message in someone's inbox.
+function emailStudent(loanId, studentName) {
+    if (!confirm('Send an overdue reminder to ' + studentName + '?')) return;
+
+    apiJson('/overdue/' + loanId + '/notify', 'POST', {})
+        .then(data => {
+            if (data.success) {
+                showAlert(data.message, 'success');
+            } else {
+                showAlert(data.error, 'error');
+            }
+        })
+        .catch(() => showAlert('Could not send the reminder', 'error'));
 }
 
 // ===========================================================================
@@ -365,18 +384,42 @@ function fillSelect(id, values, placeholder) {
 // INVENTORY
 // ===========================================================================
 
+// Assets currently in the system. A technician also gets Edit and Retire on
+// each row plus the Add Asset form above the table; a student sees neither.
 function loadInventory() {
+    const isTechnician = currentUser && currentUser.role === 'technician';
+
+    document.getElementById('addAssetPanel').style.display = isTechnician ? 'block' : 'none';
+    document.getElementById('inventoryActionHeader').style.display = isTechnician ? '' : 'none';
+
+    if (isTechnician) loadAssetLookups();
+
     api('/inventory')
         .then(res => res.json())
         .then(data => {
             const tbody = document.getElementById('inventoryTable');
             tbody.innerHTML = '';
 
+            const columns = isTechnician ? 10 : 9;
             if (!Array.isArray(data) || data.length === 0) {
-                return emptyRow(tbody, 9, 'No assets in inventory');
+                return emptyRow(tbody, columns, 'No assets in inventory');
             }
 
             data.forEach(item => {
+                const retired = item.status === 'Decommissioned';
+
+                let actions = '';
+                if (isTechnician) {
+                    actions = '<td class="row-actions">' +
+                        '<button type="button" class="action-btn btn-small" ' +
+                            'onclick="openEditAsset(' + item.assetid + ')">Edit</button>' +
+                        (retired ? '' :
+                            '<button type="button" class="action-btn btn-cancel" ' +
+                            'onclick="retireAsset(' + item.assetid + ', \'' +
+                            esc(item.assetname) + '\')">Retire</button>') +
+                        '</td>';
+                }
+
                 const row = document.createElement('tr');
                 row.innerHTML =
                     '<td>' + esc(item.assetname) + '</td>' +
@@ -389,11 +432,144 @@ function loadInventory() {
                         esc(item.status) + '</span></td>' +
                     '<td>' + (item.checkedoutto ? esc(item.checkedoutto) : '-') + '</td>' +
                     '<td>' + shortDate(item.checkoutdate) + '</td>' +
-                    '<td>' + shortDate(item.duedate) + '</td>';
+                    '<td>' + shortDate(item.duedate) + '</td>' +
+                    actions;
                 tbody.appendChild(row);
             });
+
+            inventoryCache = data;
         })
         .catch(err => console.error('Inventory error:', err));
+}
+
+// ---------------------------------------------------------------------------
+// ADD / EDIT / RETIRE ASSETS (technician)
+// ---------------------------------------------------------------------------
+
+let inventoryCache = [];
+let lookups = { categories: [], rooms: [] };
+let editingAssetId = null;
+
+function loadAssetLookups() {
+    if (lookups.categories.length > 0) return;   // only fetch once per session
+
+    api('/lookups')
+        .then(res => res.json())
+        .then(data => {
+            lookups = data;
+            ['newAssetCategory', 'editAssetCategory'].forEach(id =>
+                fillLookup(id, data.categories, 'categoryid', 'categoryname'));
+            ['newAssetRoom', 'editAssetRoom'].forEach(id =>
+                fillLookup(id, data.rooms, 'roomid', 'roomname'));
+        })
+        .catch(err => console.error('Lookups error:', err));
+}
+
+function fillLookup(selectId, rows, valueKey, labelKey) {
+    const select = document.getElementById(selectId);
+    if (!select) return;
+    select.innerHTML = '';
+    rows.forEach(row => {
+        const opt = document.createElement('option');
+        opt.value = row[valueKey];
+        opt.textContent = row[labelKey];
+        select.appendChild(opt);
+    });
+}
+
+function addAsset() {
+    const body = {
+        assetName:    document.getElementById('newAssetName').value.trim(),
+        serialNumber: document.getElementById('newAssetSerial').value.trim(),
+        categoryId:   document.getElementById('newAssetCategory').value,
+        roomId:       document.getElementById('newAssetRoom').value,
+        condition:    document.getElementById('newAssetCondition').value,
+        cost:         document.getElementById('newAssetCost').value
+    };
+
+    if (!body.assetName || !body.serialNumber) {
+        return showAlert('Enter both an asset name and a serial number', 'error');
+    }
+
+    apiJson('/assets', 'POST', body)
+        .then(data => {
+            if (data.success) {
+                showAlert(data.message, 'success');
+                ['newAssetName', 'newAssetSerial', 'newAssetCost'].forEach(id =>
+                    document.getElementById(id).value = '');
+                loadInventory();
+            } else {
+                showAlert(data.error, 'error');
+            }
+        })
+        .catch(() => showAlert('Could not add the asset', 'error'));
+}
+
+function openEditAsset(assetId) {
+    const asset = inventoryCache.find(a => a.assetid === assetId);
+    if (!asset) return;
+
+    editingAssetId = assetId;
+    document.getElementById('editAssetName').value = asset.assetname;
+    document.getElementById('editAssetSerial').value = asset.serialnumber;
+    document.getElementById('editAssetCondition').value = asset.condition;
+    document.getElementById('editAssetCost').value = asset.cost == null ? '' : asset.cost;
+
+    // Match the dropdowns to the asset by name, since the table gives names not ids.
+    const category = lookups.categories.find(c => c.categoryname === asset.categoryname);
+    const room = lookups.rooms.find(r => r.roomname === asset.roomname);
+    if (category) document.getElementById('editAssetCategory').value = category.categoryid;
+    if (room) document.getElementById('editAssetRoom').value = room.roomid;
+
+    document.getElementById('editAssetModal').style.display = 'block';
+}
+
+function closeEditAsset() {
+    document.getElementById('editAssetModal').style.display = 'none';
+    editingAssetId = null;
+}
+
+function saveAsset() {
+    const body = {
+        assetName:    document.getElementById('editAssetName').value.trim(),
+        serialNumber: document.getElementById('editAssetSerial').value.trim(),
+        categoryId:   document.getElementById('editAssetCategory').value,
+        roomId:       document.getElementById('editAssetRoom').value,
+        condition:    document.getElementById('editAssetCondition').value,
+        cost:         document.getElementById('editAssetCost').value
+    };
+
+    if (!body.assetName || !body.serialNumber) {
+        return showAlert('Enter both an asset name and a serial number', 'error');
+    }
+
+    apiJson('/assets/' + editingAssetId, 'PUT', body)
+        .then(data => {
+            if (data.success) {
+                showAlert(data.message, 'success');
+                closeEditAsset();
+                loadInventory();
+            } else {
+                showAlert(data.error, 'error');
+            }
+        })
+        .catch(() => showAlert('Could not update the asset', 'error'));
+}
+
+// Equipment is retired rather than deleted, so its loan history survives.
+function retireAsset(assetId, assetName) {
+    if (!confirm('Retire ' + assetName + '?\n\nIt stays in the database with its loan history, but can no longer be issued.')) return;
+
+    apiJson('/assets/' + assetId + '/retire', 'POST', {})
+        .then(data => {
+            if (data.success) {
+                showAlert(data.message, 'success');
+                loadInventory();
+            } else {
+                showAlert(data.error, 'error');
+            }
+        })
+        .catch(() => showAlert('Could not retire the asset', 'error'));
 }
 
 // ===========================================================================
@@ -776,4 +952,5 @@ window.addEventListener('DOMContentLoaded', () => {
 window.onclick = (event) => {
     if (event.target === document.getElementById('reservationModal')) closeModal();
     if (event.target === document.getElementById('forgotModal')) closeForgotPassword();
+    if (event.target === document.getElementById('editAssetModal')) closeEditAsset();
 };
