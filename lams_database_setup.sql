@@ -15,6 +15,9 @@ DROP VIEW IF EXISTS StudentLoanSummary CASCADE;
 DROP VIEW IF EXISTS InventoryByRoom CASCADE;
 
 DROP TABLE IF EXISTS PasswordReset CASCADE;
+-- An earlier version tracked reminders in their own table. They live on Loan
+-- now (RemindersSent / LastRemindedAt), so drop the old one if it is still there.
+DROP TABLE IF EXISTS Reminder CASCADE;
 DROP TABLE IF EXISTS Fine CASCADE;
 DROP TABLE IF EXISTS Maintenance CASCADE;
 DROP TABLE IF EXISTS Loan CASCADE;
