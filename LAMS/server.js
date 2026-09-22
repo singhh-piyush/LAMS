@@ -279,7 +279,15 @@ app.post('/api/reset-password', async (req, res) => {
         await pool.query('UPDATE users SET passwordhash = $1 WHERE userid = $2', [newHash, userId]);
         await pool.query('UPDATE passwordreset SET used = TRUE WHERE tokenhash = $1', [tokenHash]);
 
-        res.json({ success: true, message: 'Password updated. You can now log in.' });
+        // Sign out whoever is logged in in this browser before answering. Without
+        // this the reset page redirects to index.html, the page asks /api/me, and
+        // any session already sitting in the browser is restored - so finishing a
+        // reset on a shared machine dropped you into the previous person's
+        // dashboard, which on a lab machine is usually the technician's.
+        // A reset is exactly the point at which an old session should stop working.
+        req.session.destroy(() => {
+            res.json({ success: true, message: 'Password updated. You can now log in.' });
+        });
     } catch (error) {
         console.error('Reset password error:', error.message);
         res.status(500).json({ success: false, message: 'Server error' });

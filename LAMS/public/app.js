@@ -1066,32 +1066,23 @@ function clearTransactionForm() {
 // FORGOT PASSWORD
 // ===========================================================================
 
-function openForgotPassword() {
-    document.getElementById('forgotModal').style.display = 'block';
-    document.getElementById('forgotMessage').textContent = '';
-}
+// No second form to fill in. The number is already in the login box, and the link
+// goes to the email address on that account, so there is nothing else to ask for.
+function requestPasswordReset() {
+    const message = document.getElementById('resetMessage');
+    const identifier = document.getElementById('studentNumber').value.trim();
 
-function closeForgotPassword() {
-    document.getElementById('forgotModal').style.display = 'none';
-    document.getElementById('forgotEmail').value = '';
-}
+    document.getElementById('errorMessage').textContent = '';
 
-function submitForgotPassword() {
-    const identifier = document.getElementById('forgotEmail').value.trim();
     if (!identifier) {
-        document.getElementById('forgotMessage').textContent =
-            'Please enter your student number or email address';
+        message.textContent = 'Type your student or technician number above first, ' +
+                              'then press this again.';
         return;
     }
 
     apiJson('/forgot-password', 'POST', { identifier: identifier })
-        .then(data => {
-            document.getElementById('forgotMessage').textContent = data.message;
-            document.getElementById('forgotEmail').value = '';
-        })
-        .catch(() => {
-            document.getElementById('forgotMessage').textContent = 'Could not reach the server';
-        });
+        .then(data => { message.textContent = data.message; })
+        .catch(() => { message.textContent = 'Could not reach the server'; });
 }
 
 // ===========================================================================
@@ -1147,6 +1138,5 @@ window.addEventListener('DOMContentLoaded', () => {
 
 window.onclick = (event) => {
     if (event.target === document.getElementById('reservationModal')) closeModal();
-    if (event.target === document.getElementById('forgotModal')) closeForgotPassword();
     if (event.target === document.getElementById('assetModal')) closeAssetModal();
 };

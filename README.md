@@ -305,12 +305,18 @@ The "Forgot your password?" link sends a reset email. Which transport it uses is
 
 Switching provider is a `.env` change only — no code changes.
 
-**You reset by student number or email**, the same as the login box accepts — so a student who
-only ever remembers their number can still get in.
+**There is no form to fill in.** Type your student or technician number into the login box and
+press *Forgot your password?* — the number is already there, so nothing else is asked for.
+(The endpoint also accepts an email address, if anything sends one.)
 
 Wherever you start from, the link is sent to **the email address stored on that account**,
 never to an address typed into the form. That matters: if it mailed whatever was typed, then
 a student number plus any address would send someone else's reset link to the sender.
+
+Completing a reset **signs out whatever session is open in that browser**. Without this the
+reset page redirects to the app, the app asks the server who is logged in, and any session
+already sitting in the browser is restored — so on a shared lab machine, finishing a reset
+dropped you into the previous person's dashboard.
 
 The link is single-use and expires one hour after it is issued. Only a SHA-256 hash of the
 token is stored, so a copy of the database cannot be used to reset anyone's password. The

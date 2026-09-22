@@ -33,7 +33,11 @@
 
             <button type="button" id="loginBtn" class="login-btn" onclick="handleLogin()">Login</button>
 
-            <button type="button" class="link-btn" onclick="openForgotPassword()">Forgot your password?</button>
+            <button type="button" class="link-btn" onclick="requestPasswordReset()">Forgot your password?</button>
+
+            <!-- The reset link goes to the email on the account, so the number above
+                 is all this needs - there is nothing more to ask for. -->
+            <div id="resetMessage" class="info-message"></div>
         </div>
 
         <div class="demo-info">
@@ -428,23 +432,6 @@
     </div>
 </div>
 
-<!-- ===================== FORGOT PASSWORD MODAL ===================== -->
-<div id="forgotModal" class="modal">
-    <div class="modal-content">
-        <button class="close-btn" onclick="closeForgotPassword()">&times;</button>
-        <h3>Reset Your Password</h3>
-        <div class="stack">
-            <div class="form-group">
-                <label for="forgotEmail">Student Number or Email</label>
-                <input type="text" id="forgotEmail" placeholder="e.g. 25116045">
-            </div>
-            <p class="info-message">The reset link is sent to the email address on your
-               account, not to an address you type here.</p>
-            <div id="forgotMessage" class="info-message"></div>
-            <button type="button" class="action-btn btn-reserve" onclick="submitForgotPassword()">Send Reset Link</button>
-        </div>
-    </div>
-</div>
 
 <script>
 function handleLogin() {
