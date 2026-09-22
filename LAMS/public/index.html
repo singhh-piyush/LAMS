@@ -434,9 +434,11 @@
         <h3>Reset Your Password</h3>
         <div class="stack">
             <div class="form-group">
-                <label for="forgotEmail">Email Address</label>
-                <input type="email" id="forgotEmail" placeholder="you@dut.ac.za">
+                <label for="forgotEmail">Student Number or Email</label>
+                <input type="text" id="forgotEmail" placeholder="e.g. 25116045">
             </div>
+            <p class="info-message">The reset link is sent to the email address on your
+               account, not to an address you type here.</p>
             <div id="forgotMessage" class="info-message"></div>
             <button type="button" class="action-btn btn-reserve" onclick="submitForgotPassword()">Send Reset Link</button>
         </div>

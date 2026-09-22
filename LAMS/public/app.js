@@ -1077,13 +1077,14 @@ function closeForgotPassword() {
 }
 
 function submitForgotPassword() {
-    const email = document.getElementById('forgotEmail').value.trim();
-    if (!email) {
-        document.getElementById('forgotMessage').textContent = 'Please enter your email address';
+    const identifier = document.getElementById('forgotEmail').value.trim();
+    if (!identifier) {
+        document.getElementById('forgotMessage').textContent =
+            'Please enter your student number or email address';
         return;
     }
 
-    apiJson('/forgot-password', 'POST', { email: email })
+    apiJson('/forgot-password', 'POST', { identifier: identifier })
         .then(data => {
             document.getElementById('forgotMessage').textContent = data.message;
             document.getElementById('forgotEmail').value = '';

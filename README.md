@@ -304,10 +304,18 @@ The "Forgot your password?" link sends a reset email. Which transport it uses is
 
 Switching provider is a `.env` change only — no code changes.
 
-The reset link is single-use and expires one hour after it is issued. Only a SHA-256 hash of
-the token is stored, so a copy of the database cannot be used to reset anyone's password. The
-"forgot password" endpoint gives the same answer whether or not the address is registered, so
-it cannot be used to find out who has an account.
+**You reset by student number or email**, the same as the login box accepts — so a student who
+only ever remembers their number can still get in.
+
+Wherever you start from, the link is sent to **the email address stored on that account**,
+never to an address typed into the form. That matters: if it mailed whatever was typed, then
+a student number plus any address would send someone else's reset link to the sender.
+
+The link is single-use and expires one hour after it is issued. Only a SHA-256 hash of the
+token is stored, so a copy of the database cannot be used to reset anyone's password. The
+endpoint gives the same answer whether or not the account exists, and does not repeat back
+which address it used, so it cannot be used to find out who has an account or to look up
+somebody's email from their student number.
 
 ---
 

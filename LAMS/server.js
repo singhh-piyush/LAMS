@@ -179,20 +179,25 @@ app.get('/api/me', (req, res) => {
 
 // Step 1: request a reset link.
 app.post('/api/forgot-password', async (req, res) => {
-    const { email } = req.body;
+    // Either a student number or an email address, the same as the login box takes.
+    // The older field name still works so nothing that posts `email` breaks.
+    const identifier = req.body.identifier || req.body.email;
 
-    // Always the same answer, whether or not the address is registered.
+    // Always the same answer, whether or not the account exists. It deliberately
+    // does not repeat back which address was used - saying that would turn this
+    // into a way of looking up anyone's email from their student number.
     const sameAnswer = {
         success: true,
-        message: 'If that email address is registered, a reset link has been sent to it.'
+        message: 'If that account exists, a reset link has been sent to the email address on file.'
     };
 
-    if (!email) return res.json(sameAnswer);
+    if (!identifier) return res.json(sameAnswer);
 
     try {
         const result = await pool.query(
-            'SELECT userid, firstname FROM users WHERE email = $1 AND isactive = TRUE',
-            [email.trim().toLowerCase()]
+            `SELECT userid, firstname, email FROM users
+             WHERE (studentnumber = $1 OR email = LOWER($1)) AND isactive = TRUE`,
+            [String(identifier).trim()]
         );
 
         if (result.rows.length > 0) {
@@ -219,7 +224,10 @@ app.post('/api/forgot-password', async (req, res) => {
 
             const link = `${BASE_URL}/reset.html?token=${token}`;
             await sendMail({
-                to: email.trim(),
+                // Always the address on the account, never whatever was typed in.
+                // Otherwise a student number plus any address would send that
+                // person's reset link wherever the sender liked.
+                to: user.email,
                 subject: 'LAMS password reset',
                 text: `Hello ${user.firstname},\n\n` +
                       `A password reset was requested for your LAMS account.\n\n` +
