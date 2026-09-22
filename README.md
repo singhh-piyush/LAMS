@@ -171,7 +171,13 @@ is a record rather than a number that silently drops to zero.
 
 ## Managing the inventory
 
-The **Inventory** tab is read-only for students. A technician also gets:
+The **Inventory** tab is read-only for students, and they do not see who is holding an item -
+that column reads `-` for them. Status and due date stay visible, because "out until the 25th"
+is what a student needs in order to decide whether to reserve it, and neither says who has it.
+Who borrowed what is technician-only, for the same reason the reports and the table browser
+are.
+
+A technician also gets:
 
 - an **Add Asset** button above the table, which opens a form with Category and Lab chosen
   from dropdowns

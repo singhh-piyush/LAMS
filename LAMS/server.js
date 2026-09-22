@@ -384,7 +384,17 @@ app.get('/api/inventory', requireAuth, async (req, res) => {
             LEFT JOIN users u     ON l.userid     = u.userid
             ORDER BY a.assetname ASC
         `);
-        res.json(result.rows);
+
+        // Students share this screen with the technician, and it is the only place
+        // they see a borrower's name. Who has an item is nobody else's business -
+        // the same reason the reports and the table browser are technician-only -
+        // so the name is dropped for everyone else. Status and due date stay, since
+        // "out until the 25th" is exactly what a student needs to decide whether to
+        // reserve it, and neither says who has it.
+        const isTechnician = req.session.user.role === 'technician';
+        res.json(result.rows.map(row =>
+            isTechnician ? row : Object.assign({}, row, { checkedoutto: null })
+        ));
     } catch (error) {
         console.error('Inventory error:', error.message);
         res.status(500).json({ error: 'Failed to fetch inventory' });
