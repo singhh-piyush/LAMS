@@ -412,7 +412,7 @@ function loadReportList() {
                 const btn = document.createElement('button');
                 btn.type = 'button';
                 btn.className = 'report-btn' + (index === 0 ? ' active' : '');
-                btn.textContent = (index + 1) + '. ' + report.title;
+                btn.textContent = report.label;
                 btn.onclick = () => {
                     document.querySelectorAll('.report-btn').forEach(b => b.classList.remove('active'));
                     btn.classList.add('active');
@@ -434,35 +434,41 @@ function runReport(key) {
             if (data.error) return showAlert(data.error, 'error');
 
             document.getElementById('reportTitle').textContent = data.title;
-            document.getElementById('reportNote').textContent = data.note;
+            document.getElementById('reportNote').textContent = data.description;
             document.getElementById('reportCount').textContent =
-                data.rowCount + (data.rowCount === 1 ? ' row returned' : ' rows returned');
+                data.rowCount + (data.rowCount === 1 ? ' record' : ' records');
 
-            // The columns come back with the result, so one renderer handles
-            // all six reports without hardcoding any column names.
+            // Column labels and types come back with the result, so one renderer
+            // handles all six reports without hardcoding any column names.
             const head = document.getElementById('reportHead');
-            head.innerHTML = '<tr>' +
-                data.columns.map(c => '<th>' + esc(c) + '</th>').join('') + '</tr>';
+            head.innerHTML = '<tr>' + data.columns.map(c =>
+                '<th' + (c.numeric ? ' class="num"' : '') + '>' + esc(c.name) + '</th>'
+            ).join('') + '</tr>';
 
             const body = document.getElementById('reportBody');
             body.innerHTML = '';
 
             if (data.rows.length === 0) {
-                return emptyRow(body, data.columns.length, 'This report returned no rows');
+                return emptyRow(body, data.columns.length, 'This report returned no records');
             }
 
             data.rows.forEach(row => {
                 const tr = document.createElement('tr');
-                tr.innerHTML = data.columns.map(c => '<td>' + formatCell(row[c]) + '</td>').join('');
+                tr.innerHTML = data.columns.map(c =>
+                    '<td' + (c.numeric ? ' class="num"' : '') + '>' +
+                    formatCell(row[c.name], c) + '</td>'
+                ).join('');
                 body.appendChild(tr);
             });
         })
         .catch(err => console.error('Report error:', err));
 }
 
-// Dates arrive as ISO strings; show them the way the rest of the app does.
-function formatCell(value) {
-    if (value === null || value === undefined) return '<em>-</em>';
+// Dates arrive as ISO strings and money as numeric strings; show both the way
+// the rest of the app does.
+function formatCell(value, column) {
+    if (value === null || value === undefined) return '&ndash;';
+    if (column && column.money) return money(value);
     if (typeof value === 'string' && /^\d{4}-\d{2}-\d{2}T/.test(value)) {
         return shortDate(value);
     }

@@ -292,21 +292,24 @@
         <!-- ---------- REPORTS ---------- -->
         <div id="reports" class="content-section">
             <h3>Database Reports</h3>
-            <p class="hint">Six queries run directly against the PostgreSQL database.</p>
+            <div class="reports-layout">
+                <nav class="report-nav" id="reportPicker"></nav>
 
-            <div class="report-picker" id="reportPicker"></div>
+                <div class="report-panel">
+                    <div class="report-meta">
+                        <div>
+                            <h4 id="reportTitle"></h4>
+                            <p class="hint" id="reportNote"></p>
+                        </div>
+                        <span class="row-count" id="reportCount"></span>
+                    </div>
 
-            <div class="report-panel">
-                <h4 id="reportTitle"></h4>
-                <p class="hint" id="reportNote"></p>
-
-                <p class="hint" id="reportCount"></p>
-
-                <div class="table-wrap">
-                    <table>
-                        <thead id="reportHead"></thead>
-                        <tbody id="reportBody"></tbody>
-                    </table>
+                    <div class="table-wrap">
+                        <table>
+                            <thead id="reportHead"></thead>
+                            <tbody id="reportBody"></tbody>
+                        </table>
+                    </div>
                 </div>
             </div>
         </div>

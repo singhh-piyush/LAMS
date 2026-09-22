@@ -758,12 +758,16 @@ app.get('/api/technician/dashboard', requireTechnician, async (req, res) => {
 // and the business rules say a student may only see their own.
 // ============================================================================
 const REPORTS = {
-    inventory: {
-        title: 'All assets with their category and room',
-        note: 'A three-table join across asset, asset_category and room.',
-        sql: `SELECT a.SerialNumber, a.AssetName,
-       ac.CategoryName, r.RoomName,
-       a.Condition, a.Status
+    register: {
+        label: 'Asset Register',
+        title: 'Asset Register',
+        description: 'Every item held by the lab, with its category, storage location and current condition.',
+        sql: `SELECT a.SerialNumber   AS "Asset Tag",
+       a.AssetName     AS "Equipment",
+       ac.CategoryName AS "Category",
+       r.RoomName      AS "Location",
+       a.Condition     AS "Condition",
+       a.Status        AS "Status"
 FROM Asset a
 JOIN AssetCategory ac ON a.CategoryID = ac.CategoryID
 JOIN Room r           ON a.RoomID     = r.RoomID
@@ -771,14 +775,16 @@ ORDER BY ac.CategoryName, a.AssetName;`
     },
 
     onloan: {
-        title: 'Everything currently on loan',
-        note: 'Who holds each item and when it is due back. A loan is open while ReturnDate IS NULL.',
-        sql: `SELECT a.SerialNumber, a.AssetName,
-       u.StudentNumber,
-       u.FirstName || ' ' || u.LastName AS Student,
-       l.CheckoutDate::date AS IssuedOn,
-       l.DueDate,
-       l.DueDate - CURRENT_DATE AS DaysRemaining
+        label: 'Items on Loan',
+        title: 'Items Currently on Loan',
+        description: 'Equipment signed out at the moment, who is holding it and when it falls due.',
+        sql: `SELECT a.SerialNumber AS "Asset Tag",
+       a.AssetName    AS "Equipment",
+       u.StudentNumber AS "Student Number",
+       u.FirstName || ' ' || u.LastName AS "Borrower",
+       l.CheckoutDate::date AS "Issued",
+       l.DueDate            AS "Due",
+       l.DueDate - CURRENT_DATE AS "Days Remaining"
 FROM Loan l
 JOIN Asset a ON l.AssetID = a.AssetID
 JOIN Users u ON l.UserID  = u.UserID
@@ -787,74 +793,85 @@ ORDER BY l.DueDate ASC;`
     },
 
     overdue: {
-        title: 'Overdue items',
-        note: 'Past the due date with nothing returned. This is the report the paper logbook could not produce.',
-        sql: `SELECT a.SerialNumber, a.AssetName,
-       u.StudentNumber,
-       u.FirstName || ' ' || u.LastName AS Student,
-       u.PhoneNumber,
-       l.DueDate,
-       CURRENT_DATE - l.DueDate AS DaysOverdue
+        label: 'Overdue Items',
+        title: 'Overdue Items',
+        description: 'Loans past their due date with nothing returned, including a contact number for follow-up.',
+        sql: `SELECT a.SerialNumber AS "Asset Tag",
+       a.AssetName    AS "Equipment",
+       u.StudentNumber AS "Student Number",
+       u.FirstName || ' ' || u.LastName AS "Borrower",
+       u.PhoneNumber  AS "Contact",
+       l.DueDate      AS "Due",
+       CURRENT_DATE - l.DueDate AS "Days Overdue"
 FROM Loan l
 JOIN Asset a ON l.AssetID = a.AssetID
 JOIN Users u ON l.UserID  = u.UserID
 WHERE l.DueDate < CURRENT_DATE
   AND l.ReturnDate IS NULL
-ORDER BY DaysOverdue DESC;`
+ORDER BY CURRENT_DATE - l.DueDate DESC;`
     },
 
     utilisation: {
-        title: 'Most borrowed assets, and assets never borrowed',
-        note: 'A LEFT JOIN so that assets with no loans at all still appear, with a count of zero.',
-        sql: `SELECT a.SerialNumber, a.AssetName,
-       ac.CategoryName,
-       COUNT(l.LoanID) AS TimesBorrowed,
-       MAX(l.CheckoutDate)::date AS LastBorrowed
+        label: 'Equipment Utilisation',
+        title: 'Equipment Utilisation',
+        description: 'How often each item has been issued, including equipment that has never been borrowed.',
+        sql: `SELECT a.SerialNumber AS "Asset Tag",
+       a.AssetName    AS "Equipment",
+       ac.CategoryName AS "Category",
+       COUNT(l.LoanID) AS "Times Borrowed",
+       MAX(l.CheckoutDate)::date AS "Last Issued"
 FROM Asset a
 JOIN AssetCategory ac ON a.CategoryID = ac.CategoryID
 LEFT JOIN Loan l      ON a.AssetID    = l.AssetID
 GROUP BY a.AssetID, a.SerialNumber, a.AssetName, ac.CategoryName
-ORDER BY TimesBorrowed DESC, a.AssetName ASC;`
+ORDER BY "Times Borrowed" DESC, a.AssetName ASC;`
     },
 
-    latereturners: {
-        title: 'Students with two or more late returns',
-        note: 'GROUP BY with a HAVING clause. A return is late when ReturnDate is after DueDate.',
-        sql: `SELECT u.StudentNumber,
-       u.FirstName || ' ' || u.LastName AS Student,
-       u.PhoneNumber,
-       COUNT(*) AS LateReturns,
-       MAX(l.ReturnDate - l.DueDate) AS WorstDelayDays
+    latereturns: {
+        label: 'Repeat Late Returns',
+        title: 'Repeat Late Returns',
+        description: 'Students who have brought equipment back late on two or more separate occasions.',
+        sql: `SELECT u.StudentNumber AS "Student Number",
+       u.FirstName || ' ' || u.LastName AS "Student",
+       u.PhoneNumber AS "Contact",
+       COUNT(*)      AS "Late Returns",
+       MAX(l.ReturnDate - l.DueDate) AS "Longest Delay"
 FROM Loan l
 JOIN Users u ON l.UserID = u.UserID
 WHERE l.ReturnDate IS NOT NULL
   AND l.ReturnDate > l.DueDate
 GROUP BY u.UserID, u.StudentNumber, u.FirstName, u.LastName, u.PhoneNumber
 HAVING COUNT(*) >= 2
-ORDER BY LateReturns DESC;`
+ORDER BY "Late Returns" DESC;`
     },
 
     maintenance: {
-        title: 'Total maintenance cost per category',
-        note: 'Aggregates spend across the join from maintenance through asset to category.',
-        sql: `SELECT ac.CategoryName,
-       COUNT(m.MaintenanceID) AS Repairs,
-       SUM(m.Cost)            AS TotalCost,
-       ROUND(AVG(m.Cost), 2)  AS AverageCost
+        label: 'Maintenance Spend',
+        title: 'Maintenance Spend by Category',
+        description: 'Repair and servicing costs grouped by equipment category, to show where the budget goes.',
+        sql: `SELECT ac.CategoryName AS "Category",
+       COUNT(m.MaintenanceID) AS "Repairs",
+       SUM(m.Cost)            AS "Total Cost",
+       ROUND(AVG(m.Cost), 2)  AS "Average Cost"
 FROM Maintenance m
 JOIN Asset a          ON m.AssetID    = a.AssetID
 JOIN AssetCategory ac ON a.CategoryID = ac.CategoryID
 GROUP BY ac.CategoryName
-ORDER BY TotalCost DESC;`
+ORDER BY "Total Cost" DESC;`
     }
 };
+
+// PostgreSQL type OIDs, used to right-align numbers and show money as rands.
+const NUMERIC_TYPES = new Set([20, 21, 23, 26, 700, 701, 1700]);
+const MONEY_TYPES   = new Set([1700]);
 
 // The list of available reports, for the picker.
 app.get('/api/reports', requireTechnician, (req, res) => {
     res.json(Object.keys(REPORTS).map(key => ({
         key: key,
+        label: REPORTS[key].label,
         title: REPORTS[key].title,
-        note: REPORTS[key].note
+        description: REPORTS[key].description
     })));
 });
 
@@ -868,8 +885,14 @@ app.get('/api/reports/:key', requireTechnician, async (req, res) => {
         res.json({
             key: req.params.key,
             title: report.title,
-            note: report.note,
-            columns: result.fields.map(f => f.name),
+            description: report.description,
+            // The column labels come from the SQL aliases, so the page shows
+            // "Student Number" rather than the raw studentnumber column.
+            columns: result.fields.map(f => ({
+                name: f.name,
+                numeric: NUMERIC_TYPES.has(f.dataTypeID),
+                money: MONEY_TYPES.has(f.dataTypeID)
+            })),
             rows: result.rows,
             rowCount: result.rowCount
         });

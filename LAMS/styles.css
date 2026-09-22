@@ -604,7 +604,7 @@ table tbody tr:last-child td {
 }
 
 .condition-badge.needs-repair {
-    background: #fee2e2;
+    background: #fee;
     color: #991b1b;
 }
 
@@ -614,7 +614,7 @@ table tbody tr:last-child td {
 }
 
 .status-badge.overdue {
-    background: #fee2e2;
+    background: #fee;
     color: #991b1b;
 }
 
@@ -630,7 +630,7 @@ table tbody tr:last-child td {
    specificity, so it was winning and painting the dashboard card titles dark
    blue on a dark blue card, with a dark underline. This puts them back. */
 .content-section .dashboard-card h3 {
-    color: #ffffff;
+    color: white;
     font-size: 14px;
     font-weight: 600;
     margin-bottom: 15px;
@@ -672,54 +672,86 @@ table tbody tr:last-child td {
 }
 
 .toggle-pw:hover {
-    background: #eef2ff;
+    background: #f0f4ff;
     color: #2563eb;
 }
 
 /* ============================================================================
    REPORTS
+   Reuses the existing nav-btn and form-container styling so the reports page
+   matches the rest of the site; no new colours or effects are introduced.
    ============================================================================ */
-.report-picker {
-    display: flex;
-    flex-wrap: wrap;
-    gap: 8px;
-    margin-bottom: 20px;
+.reports-layout {
+    display: grid;
+    grid-template-columns: 240px 1fr;
+    gap: 20px;
+    align-items: start;
 }
 
+.report-nav {
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+}
+
+/* Same palette and active state as .nav-btn, stacked instead of in a row */
 .report-btn {
-    background: #fff;
-    border: 1px solid #cbd5e1;
-    color: #334155;
-    padding: 8px 14px;
+    padding: 10px 14px;
+    background: #f5f7fa;
+    border: 1px solid #ddd;
     border-radius: 6px;
-    font-size: 13px;
     cursor: pointer;
+    font-weight: 600;
+    font-size: 14px;
+    color: #666;
     text-align: left;
+    transition: all 0.3s;
 }
 
 .report-btn:hover {
-    border-color: #1e3a8a;
-    color: #1e3a8a;
+    background: #e2e8f0;
+    color: #333;
 }
 
 .report-btn.active {
     background: #1e3a8a;
+    color: white;
     border-color: #1e3a8a;
-    color: #fff;
-    font-weight: 600;
 }
 
+/* Matches .form-container, without its 500px cap */
 .report-panel {
-    background: #fff;
-    border-radius: 10px;
+    background: white;
     padding: 25px;
+    border-radius: 8px;
     box-shadow: 0 2px 8px rgba(0, 0, 0, 0.08);
 }
 
 .report-panel h4 {
     color: #1e3a8a;
     font-size: 18px;
+    font-weight: 600;
     margin-bottom: 6px;
+}
+
+.report-meta {
+    display: flex;
+    justify-content: space-between;
+    align-items: baseline;
+    gap: 15px;
+    margin-bottom: 15px;
+    flex-wrap: wrap;
+}
+
+.row-count {
+    color: #666;
+    font-size: 13px;
+    white-space: nowrap;
+}
+
+/* Counts and money read better right-aligned */
+.num {
+    text-align: right;
 }
 
 /* ============================================================================
@@ -734,19 +766,19 @@ table tbody tr:last-child td {
 
 .inline-select {
     padding: 6px 8px;
-    border: 1px solid #cbd5e1;
+    border: 1px solid #ddd;
     border-radius: 4px;
     font-size: 12px;
-    background: #fff;
+    background: white;
 }
 
 .btn-cancel {
-    background: #64748b;
-    color: #fff;
+    background: #666;
+    color: white;
 }
 
 .btn-cancel:hover {
-    background: #475569;
+    background: #374151;
 }
 
 .late {
@@ -771,7 +803,7 @@ table tbody tr:last-child td {
 
 .status-badge.cancelled {
     background: #e2e8f0;
-    color: #475569;
+    color: #374151;
 }
 
 /* ============================================================================
@@ -791,7 +823,7 @@ table tbody tr:last-child td {
 
 .hint {
     font-size: 13px;
-    color: #64748b;
+    color: #666;
     margin: 4px 0 0;
 }
 
@@ -827,7 +859,7 @@ table tbody tr:last-child td {
 }
 
 .search-btn.secondary:hover {
-    background: #cbd5e1;
+    background: #ddd;
 }
 
 @media (max-width: 768px) {
