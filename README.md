@@ -8,106 +8,177 @@ overdue items, settles fines and runs reports. Everything is backed by a Postgre
 
 ---
 
-# Running it on your own machine
+# Setup (Windows)
 
-**Start here.** These steps take a fresh clone of this repository to a working app in about
-five minutes. Everyone in the group runs their own copy against their own local database.
+**Install these two first**, then restart Command Prompt so it can see them:
 
-## 1. Install the two things you need
+- Node.js — <https://nodejs.org> (the LTS button)
+- PostgreSQL — <https://www.postgresql.org/download/windows>
+  **Write down the password you choose during install.** You need it in step 2.
 
-| | |
-|---|---|
-| **Node.js** | v18 or newer — <https://nodejs.org> (take the LTS build) |
-| **PostgreSQL** | v12 or newer — <https://www.postgresql.org/download> |
+## 1. Clone and install
 
-**Write down the PostgreSQL password you choose during installation.** You need it in step 3,
-and there is no easy way to recover it afterwards.
+Open **Command Prompt** and run these one at a time:
 
-Nothing else is required. No Docker, no build step, no framework.
-
-## 2. Get the code and install the dependencies
-
-```bash
+```
 git clone https://github.com/singhh-piyush/LAMS.git
-cd LAMS/LAMS
+cd LAMS\LAMS
 npm install
+copy .env.example .env
 ```
 
-The repository folder is `LAMS` and the application folder inside it is also `LAMS` — that
-second `cd` is not a typo. Everything below is run from the inner folder, the one containing
-`package.json`.
+That last `cd` goes two levels in — the repo folder is `LAMS` and the app folder inside it
+is also `LAMS`. You should end up in the folder that has `package.json` in it.
 
-## 3. Create your config file
+## 2. Add your PostgreSQL password
 
-```bash
-cp .env.example .env          # Windows: copy .env.example .env
+```
+notepad .env
 ```
 
-Open `.env` and set **`DB_PASSWORD`** to the PostgreSQL password from step 1. That is the only
-line you must change; every other default works as-is.
+Change this one line to the password you chose when installing PostgreSQL, then save and
+close Notepad:
 
-`.env` is git-ignored. Your password stays on your machine and must never be committed.
+```
+DB_PASSWORD=your_postgres_password_here
+```
 
-## 4. Create and fill the database
+Nothing else in that file has to change.
 
-```bash
+## 3. Create the database and start it
+
+```
 npm run setup-db
-```
-
-This creates the `lams_db` database and runs `lams_database_setup.sql` against it. You should
-see:
-
-```
-Users: 11
-Categories: 8
-Rooms: 3
-Assets: 16
-Loans: 20
-Fines: 5
-Maintenance: 6
-Reservations: 3
-OK - every asset status matches the loan table
-OK - every asset status matches the reservation table
-```
-
-Re-run this command at any time to reset the demo data to a clean state — useful right before
-the presentation, and after anyone has been clicking around testing.
-
-## 5. Start it
-
-```bash
 npm start
 ```
 
-Open <http://localhost:3000>.
+Then open <http://localhost:3000>.
 
-## 6. Log in
+## 4. Log in
 
-Every account uses the password **`Password123`**.
+| Number | Role |
+|---|---|
+| `25116045` | Student |
+| `TECH001` | Technician |
 
-| Number | Who | Role |
-|---|---|---|
-| `25116045` | Kailash Bhyro Deyal | Student (has an overdue Raspberry Pi) |
-| `25067628` | Kynan Poliah | Student (overdue item, one unpaid and one paid fine) |
-| `22493903` | Piyush Singh | Student (clean history) |
-| `TECH001` | Ahmed Hassan | Technician |
-| `TECH002` | Nalini Sharma | Technician |
+Password for every account: **`Password123`**
 
-## If something goes wrong
+---
+
+To stop the server press **Ctrl + C**. To start it again, `cd` back into that folder and run
+`npm start`. To reset the demo data to a clean state, run `npm run setup-db` again — worth
+doing right before the presentation.
+
+### Mac / Linux
+
+Identical, except `copy .env.example .env` becomes `cp .env.example .env`, and use any text
+editor in place of `notepad`.
+
+---
+
+# Email setup (Mailtrap)
+
+**You can skip this entirely.** Out of the box `MAIL_TRANSPORT=console`, so pressing *Forgot
+your password?* prints the reset link straight into the Command Prompt window where
+`npm start` is running. Copy it into the browser and it works. No account needed.
+
+Do this part only if you want the reset email to land in an inbox you can look at — which is
+nicer for the demo.
+
+Mailtrap's **sandbox** catches everything the app sends and shows it in a fake inbox. Nothing
+is ever delivered to a real person, so you cannot accidentally email a lecturer or a
+classmate while testing.
+
+## 1. Make the account
+
+1. Go to <https://mailtrap.io> and sign up (free, no card).
+2. In the left sidebar choose **Email Testing → Inboxes**.
+3. Open the inbox it made for you — it is usually called **My Inbox**.
+
+## 2. Find the two values you need
+
+**Inbox ID** — look at the address bar while the inbox is open:
+
+```
+https://mailtrap.io/inboxes/3971842/messages
+                            ^^^^^^^
+                            this number is your inbox ID
+```
+
+**API token** — inside the inbox, open the **Integrations** tab and pick **API** from the
+dropdown. The sample code it shows contains a long token. Copy just the token itself.
+
+(You can also find it under **Settings → API Tokens** in the sidebar.)
+
+## 3. Put them in your .env
+
+```
+notepad .env
+```
+
+Change these three lines, save, close:
+
+```
+MAIL_TRANSPORT=mailtrap
+MAILTRAP_TOKEN=paste_your_api_token_here
+MAILTRAP_INBOX_ID=paste_your_inbox_id_here
+```
+
+Stop the server with **Ctrl + C** and run `npm start` again — `.env` is only read at
+startup. The line `Mail transport: mailtrap` should appear when it boots.
+
+## 4. Test it
+
+Type `25116045` into the login box, press **Forgot your password?**, then refresh your
+Mailtrap inbox. The email appears there with the reset link in it.
+
+> **Only the newest link works.** Requesting a new one cancels the previous link, so if you
+> press the button twice, open the most recent email. Links also expire after one hour and
+> can only be used once.
+
+## If the email never arrives
+
+The app never shows an email error on screen — on purpose, so nobody can use that page to
+work out which accounts exist. **Look in the Command Prompt window instead**, which is where
+it says what actually happened. Wrong token or inbox ID looks like this:
+
+```
+Mail send failed (mailtrap): Mailtrap rejected the message: {"success":false,"errors":["Unauthorized"]}
+
+================================================================
+EMAIL (console transport - not actually sent)
+...
+Open this link to choose a new password:
+http://localhost:3000/reset.html?token=c686966c92018bc...
+```
+
+So nothing is ever lost — if Mailtrap refuses it, the link is printed for you instead and
+the reset still works.
+
+Check that `MAIL_TRANSPORT=mailtrap` is spelled exactly like that, that you copied the token
+and not the whole code sample, that the inbox ID is only the digits from the URL, and that
+you restarted the server after editing `.env`.
+
+**Your `.env` is never committed** — it is git-ignored, so your token stays on your machine.
+Everyone in the group makes their own, or you can share one inbox by using the same two
+values.
+
+---
+
+# If something goes wrong
 
 | What you see | What it means |
 |---|---|
-| `Cannot find module 'express'` | You skipped `npm install`, or you ran it in the wrong folder. It belongs in the inner `LAMS` folder, next to `package.json`. |
-| `Could not connect to PostgreSQL` | PostgreSQL is not running, or `DB_USER` / `DB_PASSWORD` in `.env` are wrong. |
-| `Database: NOT CONNECTED` when the server starts | Run `npm run setup-db` first. |
+| `'git' is not recognized` | Git is not installed — get it from <https://git-scm.com/download/win> |
+| `'npm' is not recognized` | Node.js is not installed, or Command Prompt was open before you installed it. Close it and open a new one. |
+| `Cannot find module 'express'` | You skipped `npm install`, or ran it in the wrong folder. It belongs in the folder with `package.json`. |
+| `Could not connect to PostgreSQL` | PostgreSQL is not running, or `DB_PASSWORD` in `.env` is wrong. |
+| `Database: NOT CONNECTED` when it starts | Run `npm run setup-db` first. |
 | `Port 3000 already in use` | Something else is on that port. Change `PORT` in `.env`, and change `BASE_URL` to match. |
-| The page loads but every list is empty | The database exists but was never filled. Run `npm run setup-db`. |
+| Page loads but every table is empty | The database exists but was never filled. Run `npm run setup-db`. |
 
-Prefer to do the database by hand instead of using `npm run setup-db`? Create a database
-called `lams_db`, open a query tool against it, and run the whole of
-`lams_database_setup.sql`. The script does the same thing.
-
----
+Prefer to do the database by hand? Create a database called `lams_db`, open a query tool
+against it, and run the whole of `lams_database_setup.sql`.
 
 # How the system works
 
@@ -298,18 +369,18 @@ the child row is meaningless without its parent), and four views.
 
 ---
 
-# Email
+# How the password reset works
 
-The "Forgot your password?" link sends a reset email. Which transport it uses is set by
-`MAIL_TRANSPORT` in `.env`:
+Setting the email up is covered in **Email setup (Mailtrap)** near the top. This section is
+about how the feature behaves.
+
+`MAIL_TRANSPORT` in `.env` picks where mail goes, and changing it needs no code changes:
 
 | Value | What it does |
 |---|---|
-| `console` | **Default.** Prints the reset link to the terminal. Needs no account, so a fresh clone works immediately. |
-| `mailtrap` | Sends to a Mailtrap sandbox inbox. Set `MAILTRAP_TOKEN` and `MAILTRAP_INBOX_ID`. Mail is captured, never delivered to a real person. |
+| `console` | **Default.** Prints the reset link into the Command Prompt window. Needs no account, so a fresh clone works immediately. |
+| `mailtrap` | Sends to a Mailtrap sandbox inbox. Needs `MAILTRAP_TOKEN` and `MAILTRAP_INBOX_ID`. Captured, never delivered to a real person. |
 | `smtp` | Any normal SMTP server (Mailtrap SMTP, Gmail with an App Password, ...). Set the `SMTP_*` values. |
-
-Switching provider is a `.env` change only — no code changes.
 
 **There is no form to fill in.** Type your student or technician number into the login box and
 press *Forgot your password?* — the number is already there, so nothing else is asked for.

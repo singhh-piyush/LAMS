@@ -1,63 +1,92 @@
 HOW TO RUN LAMS
 ===============
 
-The full instructions are in README.md, at the top under "Running it on your own machine".
+Full instructions are in README.md. This is the short version for Windows.
 
-Short version:
 
-  1. Install Node.js (nodejs.org, LTS) and PostgreSQL (postgresql.org/download).
-     Remember the PostgreSQL password you set during install.
+BEFORE YOU START
+----------------
+Install these, then close and reopen Command Prompt:
 
-  2. Clone the repository and open a terminal in the inner LAMS folder - the one
-     with package.json in it:
+  - Node.js       https://nodejs.org              (the LTS button)
+  - PostgreSQL    https://www.postgresql.org/download/windows
 
-        git clone https://github.com/singhh-piyush/LAMS.git
-        cd LAMS/LAMS
-        npm install
+Write down the PostgreSQL password you choose during install. You need it below.
 
-  3. Copy .env.example to .env and put your PostgreSQL password in DB_PASSWORD.
 
-        Windows:   copy .env.example .env
-        Mac/Linux: cp .env.example .env
+SETUP
+-----
+Open Command Prompt and run these one at a time:
 
-  4. Create and fill the database:
+    git clone https://github.com/singhh-piyush/LAMS.git
+    cd LAMS\LAMS
+    npm install
+    copy .env.example .env
+    notepad .env
 
-        npm run setup-db
+In Notepad, change this one line to your PostgreSQL password, then save and close:
 
-  5. Start it:
+    DB_PASSWORD=your_postgres_password_here
 
-        npm start
+Then:
 
-  6. Open http://localhost:3000
+    npm run setup-db
+    npm start
+
+Open http://localhost:3000
 
 Log in with 25116045 (student) or TECH001 (technician).
-The password for every test account is: Password123
+Password for every test account: Password123
+
+Ctrl + C stops the server. "npm start" starts it again.
+"npm run setup-db" resets the demo data - do this before presenting.
+
+On Mac or Linux everything is the same, except use "cp .env.example .env"
+instead of "copy", and any text editor instead of notepad.
 
 
-DOING THE DATABASE BY HAND
---------------------------
-"npm run setup-db" does both steps for you and is less error-prone, but if you would
-rather do it yourself:
+EMAIL - OPTIONAL
+----------------
+You do not need to set this up. By default MAIL_TRANSPORT=console, so pressing
+"Forgot your password?" prints the reset link into the Command Prompt window.
+Copy it into the browser and it works.
 
-  - create a database called lams_db
-  - open a Query Tool against it
-  - paste and run the whole of lams_database_setup.sql
+If you want the email to land in a real inbox you can look at, see the
+"Email setup (Mailtrap)" section in README.md. It is a free account and takes
+about two minutes. Mailtrap's sandbox catches the mail so nothing is ever
+delivered to an actual person.
 
 
 TROUBLESHOOTING
 ---------------
+"'git' is not recognized"
+    Git is not installed. https://git-scm.com/download/win
+
+"'npm' is not recognized"
+    Node.js is not installed, or Command Prompt was already open when you
+    installed it. Close it and open a new one.
+
 "Cannot find module 'express'"
-    You skipped step 2, or ran npm install in the wrong folder. It belongs in the
-    inner LAMS folder, next to package.json.
+    You skipped npm install, or ran it in the wrong folder. It belongs in the
+    folder that has package.json in it.
 
 "Could not connect to PostgreSQL"
-    PostgreSQL is not running, or DB_USER / DB_PASSWORD in .env are wrong.
+    PostgreSQL is not running, or DB_PASSWORD in .env is wrong.
 
 "Database: NOT CONNECTED" when the server starts
     Run npm run setup-db first.
 
-Port 3000 already in use
-    Change PORT in .env, and BASE_URL to match.
+"Port 3000 already in use"
+    Change PORT in .env, and change BASE_URL to match.
 
-The page loads but every list is empty
+The page loads but every table is empty
     The database exists but was never filled. Run npm run setup-db.
+
+
+DOING THE DATABASE BY HAND
+--------------------------
+"npm run setup-db" does it for you, but if you would rather:
+
+  - create a database called lams_db
+  - open a Query Tool against it
+  - paste and run the whole of lams_database_setup.sql
