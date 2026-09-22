@@ -117,16 +117,56 @@ Switching provider is a `.env` change only — no code changes.
 
 ---
 
+## How a loan actually happens
+
+The normal path is **one click**, because the student books the item first:
+
+1. Student finds the item under **Browse Assets** and presses **Reserve**, choosing a pickup date.
+   The item's status becomes `Reserved` and a row is written to the `reservation` table.
+2. It appears on the student's **My Dashboard** under *Your Reservations*, and in the
+   technician's **Checkout / Return** tab under *Awaiting Collection*.
+3. The student arrives. The technician presses **Issue** — in one transaction this creates the
+   loan, sets the asset to `Checked Out` and marks the reservation `Completed`. That status
+   is the answer to "did they actually collect it".
+4. On the way back, the technician picks a condition and presses **Return**. Anything marked
+   `Damaged` goes to `Under Repair` automatically.
+
+Either side can press **Cancel** on a reservation, which sets it to `Cancelled` and puts the
+item back on the shelf. Reservations do not expire on their own — the technician clears them.
+
+The **Walk-in checkout** form at the bottom of that tab is the exception: it is for a student
+who turns up without having reserved anything. Trying to use it on an item that is already
+reserved is refused and points you at the Awaiting Collection list, so a reservation can never
+be left hanging as `Pending` after the item has gone out.
+
+## Reports
+
+The **Reports** tab runs six queries straight against the database and **shows the SQL that
+produced each result** above the rows. This is the Data Management "demonstration of queries"
+deliverable, and it is technician-only because four of the six show other students' details.
+
+1. All assets with their category and room — a three-table join
+2. Everything currently on loan, with who holds it and when it is due
+3. Overdue items, with the student's phone number and days overdue
+4. Most borrowed assets, and assets never borrowed — a `LEFT JOIN` so zero-loan items appear
+5. Students with two or more late returns — `GROUP BY ... HAVING`
+6. Total maintenance cost per category
+
 ## Notes for the demo
 
 - **Seed dates are relative to today.** Loans are inserted as `CURRENT_DATE - 20` and so on,
   so the overdue report always returns rows no matter which day you present.
-- **The business rule is enforced by the database**, not just the code:
+- **Two business rules are enforced by the database**, not just by the code:
   ```sql
-  CREATE UNIQUE INDEX one_open_loan_per_asset ON Loan (AssetID) WHERE ReturnDate IS NULL;
+  CREATE UNIQUE INDEX one_open_loan_per_asset
+      ON Loan (AssetID) WHERE ReturnDate IS NULL;
+
+  CREATE UNIQUE INDEX one_active_reservation_per_asset
+      ON Reservation (AssetID) WHERE Status IN ('Pending', 'Confirmed');
   ```
-  An asset can have many past loans but only one open one, so issuing something that is
-  already out is impossible. Worth showing — try checking out `RPI-001-2024` twice.
+  An asset can have many past loans but only one open one, and many past reservations but
+  only one active one. Both are partial unique indexes, so issuing or reserving something
+  twice is impossible even from psql. Worth showing — try checking out `RPI-001-2024` twice.
 - **Role checks are on the server.** Logging in as a student and requesting a
   technician-only URL returns 403, not a hidden button.
 - **Three assets have never been borrowed** (`ARM-003-2024`, `PSU-001-2024`, `ROB-002-2024`)

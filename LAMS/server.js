@@ -388,6 +388,149 @@ app.post('/api/reservation/create', requireAuth, async (req, res) => {
     }
 });
 
+// List reservations. A technician sees every active one (this is the queue they
+// work from); a student sees only their own.
+app.get('/api/reservations', requireAuth, async (req, res) => {
+    const user = req.session.user;
+
+    try {
+        const isTechnician = user.role === 'technician';
+
+        const result = await pool.query(`
+            SELECT r.reservationid, r.reservationdate, r.requestedpickupdate, r.status,
+                   a.assetid, a.assetname, a.serialnumber, a.status AS assetstatus,
+                   ac.categoryname, rm.roomname,
+                   u.userid, u.studentnumber,
+                   u.firstname || ' ' || u.lastname AS reservedby,
+                   r.requestedpickupdate < CURRENT_DATE AS overdue_pickup
+            FROM reservation r
+            JOIN asset a          ON r.assetid    = a.assetid
+            JOIN assetcategory ac ON a.categoryid = ac.categoryid
+            JOIN room rm          ON a.roomid     = rm.roomid
+            JOIN users u          ON r.userid     = u.userid
+            WHERE r.status IN ('Pending', 'Confirmed')
+              AND ($1 = TRUE OR r.userid = $2)
+            ORDER BY r.requestedpickupdate ASC
+        `, [isTechnician, user.userId]);
+
+        res.json(result.rows);
+    } catch (error) {
+        console.error('Reservations error:', error.message);
+        res.status(500).json({ error: 'Failed to load reservations' });
+    }
+});
+
+// One-click issue: turn a reservation into a loan.
+// This is the normal path - the student already booked the item, so the
+// technician just hands it over and presses one button.
+app.post('/api/reservations/:id/issue', requireTechnician, async (req, res) => {
+    const client = await pool.connect();
+    try {
+        await client.query('BEGIN');
+
+        const reservation = await client.query(`
+            SELECT r.reservationid, r.assetid, r.userid, r.status,
+                   a.assetname, a.status AS assetstatus,
+                   u.firstname || ' ' || u.lastname AS studentname
+            FROM reservation r
+            JOIN asset a ON a.assetid = r.assetid
+            JOIN users u ON u.userid  = r.userid
+            WHERE r.reservationid = $1
+            FOR UPDATE OF r, a
+        `, [req.params.id]);
+
+        if (reservation.rows.length === 0) {
+            await client.query('ROLLBACK');
+            return res.json({ success: false, error: 'Reservation not found' });
+        }
+
+        const r = reservation.rows[0];
+        if (r.status !== 'Pending' && r.status !== 'Confirmed') {
+            await client.query('ROLLBACK');
+            return res.json({ success: false, error: `That reservation is already ${r.status.toLowerCase()}` });
+        }
+        if (r.assetstatus === 'Checked Out') {
+            await client.query('ROLLBACK');
+            return res.json({ success: false, error: `${r.assetname} is already on loan` });
+        }
+
+        await client.query(
+            `INSERT INTO loan (assetid, userid, checkoutdate, duedate)
+             VALUES ($1, $2, CURRENT_TIMESTAMP, CURRENT_DATE + $3::int)`,
+            [r.assetid, r.userid, LOAN_DAYS]
+        );
+        await client.query("UPDATE asset SET status = 'Checked Out' WHERE assetid = $1", [r.assetid]);
+        // The reservation is now fulfilled - this is the "did they collect it" answer.
+        await client.query("UPDATE reservation SET status = 'Completed' WHERE reservationid = $1", [r.reservationid]);
+
+        await client.query('COMMIT');
+        res.json({
+            success: true,
+            message: `${r.assetname} issued to ${r.studentname}. Due back in ${LOAN_DAYS} days.`
+        });
+    } catch (error) {
+        await client.query('ROLLBACK');
+        if (error.code === '23505') {
+            return res.json({ success: false, error: 'That asset already has an open loan' });
+        }
+        console.error('Issue reservation error:', error.message);
+        res.status(500).json({ success: false, error: 'Could not issue the reservation' });
+    } finally {
+        client.release();
+    }
+});
+
+// Cancel a reservation and free the asset.
+// A technician may cancel any reservation; a student may cancel only their own.
+app.post('/api/reservations/:id/cancel', requireAuth, async (req, res) => {
+    const user = req.session.user;
+
+    const client = await pool.connect();
+    try {
+        await client.query('BEGIN');
+
+        const reservation = await client.query(`
+            SELECT r.reservationid, r.assetid, r.userid, r.status, a.assetname
+            FROM reservation r
+            JOIN asset a ON a.assetid = r.assetid
+            WHERE r.reservationid = $1
+            FOR UPDATE OF r, a
+        `, [req.params.id]);
+
+        if (reservation.rows.length === 0) {
+            await client.query('ROLLBACK');
+            return res.json({ success: false, error: 'Reservation not found' });
+        }
+
+        const r = reservation.rows[0];
+
+        if (user.role !== 'technician' && r.userid !== user.userId) {
+            await client.query('ROLLBACK');
+            return res.status(403).json({ success: false, error: 'That is not your reservation' });
+        }
+        if (r.status !== 'Pending' && r.status !== 'Confirmed') {
+            await client.query('ROLLBACK');
+            return res.json({ success: false, error: `That reservation is already ${r.status.toLowerCase()}` });
+        }
+
+        await client.query("UPDATE reservation SET status = 'Cancelled' WHERE reservationid = $1", [r.reservationid]);
+        // Only free the asset if it is not somehow out on loan.
+        await client.query(
+            "UPDATE asset SET status = 'Available' WHERE assetid = $1 AND status = 'Reserved'",
+            [r.assetid]
+        );
+
+        await client.query('COMMIT');
+        res.json({ success: true, message: `Reservation for ${r.assetname} cancelled` });
+    } catch (error) {
+        await client.query('ROLLBACK');
+        console.error('Cancel reservation error:', error.message);
+        res.status(500).json({ success: false, error: 'Could not cancel the reservation' });
+    } finally {
+        client.release();
+    }
+});
+
 // ============================================================================
 // CHECKOUT AND RETURN (technician only)
 // ============================================================================
@@ -428,6 +571,15 @@ app.post('/api/technician/checkout', requireTechnician, async (req, res) => {
         if (asset.status === 'Decommissioned' || asset.status === 'Under Repair') {
             await client.query('ROLLBACK');
             return res.json({ success: false, error: `${asset.assetname} is ${asset.status.toLowerCase()} and cannot be issued` });
+        }
+        // A reserved item must go out through its reservation, so that the
+        // reservation gets closed off rather than left hanging as Pending.
+        if (asset.status === 'Reserved') {
+            await client.query('ROLLBACK');
+            return res.json({
+                success: false,
+                error: `${asset.assetname} is reserved. Issue it from the "Awaiting Collection" list instead.`
+            });
         }
 
         await client.query(
@@ -599,24 +751,135 @@ app.get('/api/technician/dashboard', requireTechnician, async (req, res) => {
 
 // ============================================================================
 // REPORTS
+//
+// The six queries the Data Management module asks us to demonstrate. Each one
+// is stored with the SQL that produces it, and the SQL is sent to the browser
+// and shown above the results, so the query being demonstrated is on screen
+// next to the rows it returned.
+//
+// Technician only: four of the six show other students' names, loans or fines,
+// and the business rules say a student may only see their own.
 // ============================================================================
-app.get('/api/reports/utilization', requireAuth, async (req, res) => {
+const REPORTS = {
+    inventory: {
+        title: 'All assets with their category and room',
+        note: 'A three-table join across asset, asset_category and room.',
+        sql: `SELECT a.SerialNumber, a.AssetName,
+       ac.CategoryName, r.RoomName,
+       a.Condition, a.Status
+FROM Asset a
+JOIN AssetCategory ac ON a.CategoryID = ac.CategoryID
+JOIN Room r           ON a.RoomID     = r.RoomID
+ORDER BY ac.CategoryName, a.AssetName;`
+    },
+
+    onloan: {
+        title: 'Everything currently on loan',
+        note: 'Who holds each item and when it is due back. A loan is open while ReturnDate IS NULL.',
+        sql: `SELECT a.SerialNumber, a.AssetName,
+       u.StudentNumber,
+       u.FirstName || ' ' || u.LastName AS Student,
+       l.CheckoutDate::date AS IssuedOn,
+       l.DueDate,
+       l.DueDate - CURRENT_DATE AS DaysRemaining
+FROM Loan l
+JOIN Asset a ON l.AssetID = a.AssetID
+JOIN Users u ON l.UserID  = u.UserID
+WHERE l.ReturnDate IS NULL
+ORDER BY l.DueDate ASC;`
+    },
+
+    overdue: {
+        title: 'Overdue items',
+        note: 'Past the due date with nothing returned. This is the report the paper logbook could not produce.',
+        sql: `SELECT a.SerialNumber, a.AssetName,
+       u.StudentNumber,
+       u.FirstName || ' ' || u.LastName AS Student,
+       u.PhoneNumber,
+       l.DueDate,
+       CURRENT_DATE - l.DueDate AS DaysOverdue
+FROM Loan l
+JOIN Asset a ON l.AssetID = a.AssetID
+JOIN Users u ON l.UserID  = u.UserID
+WHERE l.DueDate < CURRENT_DATE
+  AND l.ReturnDate IS NULL
+ORDER BY DaysOverdue DESC;`
+    },
+
+    utilisation: {
+        title: 'Most borrowed assets, and assets never borrowed',
+        note: 'A LEFT JOIN so that assets with no loans at all still appear, with a count of zero.',
+        sql: `SELECT a.SerialNumber, a.AssetName,
+       ac.CategoryName,
+       COUNT(l.LoanID) AS TimesBorrowed,
+       MAX(l.CheckoutDate)::date AS LastBorrowed
+FROM Asset a
+JOIN AssetCategory ac ON a.CategoryID = ac.CategoryID
+LEFT JOIN Loan l      ON a.AssetID    = l.AssetID
+GROUP BY a.AssetID, a.SerialNumber, a.AssetName, ac.CategoryName
+ORDER BY TimesBorrowed DESC, a.AssetName ASC;`
+    },
+
+    latereturners: {
+        title: 'Students with two or more late returns',
+        note: 'GROUP BY with a HAVING clause. A return is late when ReturnDate is after DueDate.',
+        sql: `SELECT u.StudentNumber,
+       u.FirstName || ' ' || u.LastName AS Student,
+       u.PhoneNumber,
+       COUNT(*) AS LateReturns,
+       MAX(l.ReturnDate - l.DueDate) AS WorstDelayDays
+FROM Loan l
+JOIN Users u ON l.UserID = u.UserID
+WHERE l.ReturnDate IS NOT NULL
+  AND l.ReturnDate > l.DueDate
+GROUP BY u.UserID, u.StudentNumber, u.FirstName, u.LastName, u.PhoneNumber
+HAVING COUNT(*) >= 2
+ORDER BY LateReturns DESC;`
+    },
+
+    maintenance: {
+        title: 'Total maintenance cost per category',
+        note: 'Aggregates spend across the join from maintenance through asset to category.',
+        sql: `SELECT ac.CategoryName,
+       COUNT(m.MaintenanceID) AS Repairs,
+       SUM(m.Cost)            AS TotalCost,
+       ROUND(AVG(m.Cost), 2)  AS AverageCost
+FROM Maintenance m
+JOIN Asset a          ON m.AssetID    = a.AssetID
+JOIN AssetCategory ac ON a.CategoryID = ac.CategoryID
+GROUP BY ac.CategoryName
+ORDER BY TotalCost DESC;`
+    }
+};
+
+// The list of available reports, for the picker.
+app.get('/api/reports', requireTechnician, (req, res) => {
+    res.json(Object.keys(REPORTS).map(key => ({
+        key: key,
+        title: REPORTS[key].title,
+        note: REPORTS[key].note
+    })));
+});
+
+// Run one report and return its SQL alongside the rows it produced.
+app.get('/api/reports/:key', requireTechnician, async (req, res) => {
+    const report = REPORTS[req.params.key];
+    if (!report) return res.status(404).json({ error: 'No such report' });
+
     try {
-        const result = await pool.query(`
-            SELECT a.assetname, ac.categoryname, r.roomname,
-                   COUNT(l.loanid)     AS timesborrowed,
-                   MAX(l.checkoutdate) AS lastborrowed
-            FROM asset a
-            JOIN assetcategory ac ON a.categoryid = ac.categoryid
-            JOIN room r           ON a.roomid     = r.roomid
-            LEFT JOIN loan l      ON a.assetid    = l.assetid
-            GROUP BY a.assetid, a.assetname, ac.categoryname, r.roomname
-            ORDER BY timesborrowed DESC, a.assetname ASC
-        `);
-        res.json(result.rows);
+        const result = await pool.query(report.sql);
+        res.json({
+            key: req.params.key,
+            title: report.title,
+            note: report.note,
+            sql: report.sql,
+            columns: result.fields.map(f => f.name),
+            rows: result.rows,
+            rowCount: result.rowCount
+        });
     } catch (error) {
-        console.error('Reports error:', error.message);
-        res.status(500).json({ error: 'Failed to load report' });
+        console.error(`Report "${req.params.key}" failed:`, error.message);
+        res.status(500).json({ error: 'Report failed: ' + error.message });
     }
 });
 

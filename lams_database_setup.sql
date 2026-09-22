@@ -130,6 +130,13 @@ CREATE TABLE Reservation (
     Notes               TEXT
 );
 
+-- BUSINESS RULE AS A DATABASE CONSTRAINT:
+-- an asset may only be reserved by one person at a time. Past reservations
+-- (Completed or Cancelled) do not block a new one, so the same partial-index
+-- trick used for open loans applies here too.
+CREATE UNIQUE INDEX one_active_reservation_per_asset
+    ON Reservation (AssetID) WHERE Status IN ('Pending', 'Confirmed');
+
 -- 9. PASSWORD RESET TOKENS
 -- Only the SHA-256 hash of the token is stored, never the token itself,
 -- so a copy of this table cannot be used to reset anybody's password.
@@ -193,17 +200,19 @@ INSERT INTO Users (StudentNumber, FirstName, LastName, Email, PhoneNumber, UserT
 ('TECH002',  'Nalini',   'Sharma',      'nalini.sharma@dut.ac.za',      '0718765433', 'Technician', '$2a$10$znFoYQy7NCuMxwCRuZx5He9txE.Wc/K/QozQ7UmflZrRQ8u.w49.u'),
 ('ADMIN001', 'Dr.',      'Admin',       'admin@dut.ac.za',              '0718765434', 'Admin',      '$2a$10$znFoYQy7NCuMxwCRuZx5He9txE.Wc/K/QozQ7UmflZrRQ8u.w49.u');
 
--- Assets. Status matches the loan table exactly -- see the consistency check at
--- the bottom of this script. Assets 3, 6, 8, 11 and 13 have an open loan.
+-- Assets. Status matches the loan and reservation tables exactly -- see the two
+-- consistency checks at the bottom of this script.
+--   Open loan:          assets 3, 6, 8, 11, 13  -> 'Checked Out'
+--   Active reservation: assets 2, 7, 14         -> 'Reserved'
 INSERT INTO Asset (SerialNumber, AssetName, CategoryID, RoomID, Condition, AcquisitionDate, Cost, Status) VALUES
 -- IoT Lab
 ('ARD-001-2024', 'Arduino Uno R3',                1, 1, 'Good', '2024-01-15',  25.00, 'Available'),
-('ARD-002-2024', 'Arduino Mega 2560',             1, 1, 'Good', '2024-01-15',  35.00, 'Available'),
+('ARD-002-2024', 'Arduino Mega 2560',             1, 1, 'Good', '2024-01-15',  35.00, 'Reserved'),
 ('RPI-001-2024', 'Raspberry Pi 4 Model B (8GB)',  2, 1, 'Good', '2024-02-01',  85.00, 'Checked Out'),
 ('SEN-001-2024', 'DHT22 Temperature Sensor',      3, 1, 'New',  '2024-02-15',   8.50, 'Available'),
 ('SEN-002-2024', 'Ultrasonic Sensor HC-SR04',     3, 1, 'Good', '2024-02-15',   4.50, 'Available'),
 ('MM-001-2024',  'Digital Multimeter DM-830',     4, 1, 'Fair', '2024-03-01',  15.00, 'Checked Out'),
-('PSU-001-2024', 'DC Power Supply 30V 5A',        5, 1, 'Good', '2024-03-10', 120.00, 'Available'),
+('PSU-001-2024', 'DC Power Supply 30V 5A',        5, 1, 'Good', '2024-03-10', 120.00, 'Reserved'),
 -- ARM Lab
 ('STM-001-2024', 'STM32 Discovery Board',         6, 2, 'Good', '2024-01-20',  60.00, 'Checked Out'),
 ('STM-002-2024', 'STM32 Discovery Board',         6, 2, 'Good', '2024-01-20',  60.00, 'Available'),
@@ -371,10 +380,19 @@ UNION ALL SELECT 'Reservations',COUNT(*) FROM Reservation;
 -- asset.status must agree with the loan table for every single asset
 SELECT CASE WHEN COUNT(*) = 0
             THEN 'OK - every asset status matches the loan table'
-            ELSE 'MISMATCH on ' || COUNT(*) || ' asset(s)' END AS status_check
+            ELSE 'MISMATCH on ' || COUNT(*) || ' asset(s)' END AS loan_status_check
 FROM Asset a
 WHERE (a.Status = 'Checked Out')
    <> (EXISTS (SELECT 1 FROM Loan l WHERE l.AssetID = a.AssetID AND l.ReturnDate IS NULL));
+
+-- and it must agree with the reservation table too
+SELECT CASE WHEN COUNT(*) = 0
+            THEN 'OK - every asset status matches the reservation table'
+            ELSE 'MISMATCH on ' || COUNT(*) || ' asset(s)' END AS reservation_status_check
+FROM Asset a
+WHERE (a.Status = 'Reserved')
+   <> (EXISTS (SELECT 1 FROM Reservation r
+               WHERE r.AssetID = a.AssetID AND r.Status IN ('Pending', 'Confirmed')));
 
 -- ============================================================
 -- END OF SETUP SCRIPT

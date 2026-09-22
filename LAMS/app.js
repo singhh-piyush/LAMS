@@ -76,7 +76,10 @@ function logout() {
     apiJson('/logout', 'POST', {}).finally(() => {
         currentUser = null;
         document.getElementById('mainApp').style.display = 'none';
-        document.getElementById('loginPage').style.display = 'block';
+        // Clear the inline style rather than setting 'block': the stylesheet makes
+        // #loginPage a centred flex container, and an inline display:block would
+        // override that and pin the card to the top-left corner.
+        document.getElementById('loginPage').style.display = '';
         document.getElementById('studentNumber').value = '';
         document.getElementById('password').value = '';
         document.getElementById('errorMessage').textContent = '';
@@ -94,12 +97,13 @@ function setupNavigation(role) {
     const navTabs = document.getElementById('navTabs');
     navTabs.innerHTML = '';
 
+    // Students get no Reports tab: four of the six reports show other students'
+    // names, loans and fines, so the whole section is technician-only.
     const tabs = role === 'student'
         ? [
             { id: 'studentDashboard', label: 'My Dashboard' },
             { id: 'browseAssets',     label: 'Browse Assets' },
-            { id: 'inventoryMgmt',    label: 'Inventory' },
-            { id: 'reports',          label: 'Reports' }
+            { id: 'inventoryMgmt',    label: 'Inventory' }
           ]
         : [
             { id: 'technicianDashboard', label: 'Technician Dashboard' },
@@ -133,8 +137,9 @@ function switchTab(tabId, button) {
     if (tabId === 'studentDashboard')          loadStudentDashboard();
     else if (tabId === 'browseAssets')         loadAvailableAssets();
     else if (tabId === 'technicianDashboard')  loadTechnicianDashboard();
+    else if (tabId === 'checkoutReturn')       loadCheckoutReturn();
     else if (tabId === 'inventoryMgmt')        loadInventory();
-    else if (tabId === 'reports')              loadUtilizationReport();
+    else if (tabId === 'reports')              loadReportList();
 }
 
 function emptyRow(tbody, columns, message) {
@@ -181,6 +186,38 @@ function loadStudentDashboard() {
             });
         })
         .catch(err => console.error('Student dashboard error:', err));
+
+    loadMyReservations();
+}
+
+// The student's own reservations: what they booked, for when, and whether it
+// has been collected yet.
+function loadMyReservations() {
+    api('/reservations')
+        .then(res => res.json())
+        .then(data => {
+            const tbody = document.getElementById('myReservationsTable');
+            tbody.innerHTML = '';
+
+            if (!Array.isArray(data) || data.length === 0) {
+                return emptyRow(tbody, 5, 'You have no reservations');
+            }
+
+            data.forEach(r => {
+                const row = document.createElement('tr');
+                row.innerHTML =
+                    '<td>' + esc(r.assetname) + '</td>' +
+                    '<td>' + esc(r.serialnumber) + '</td>' +
+                    '<td>' + shortDate(r.requestedpickupdate) +
+                        (r.overdue_pickup ? ' <small class="late">(pickup date passed)</small>' : '') + '</td>' +
+                    '<td><span class="status-badge ' + badgeClass(r.status) + '">' +
+                        esc(r.status) + '</span></td>' +
+                    '<td><button type="button" class="action-btn btn-cancel" ' +
+                        'onclick="cancelReservation(' + r.reservationid + ')">Cancel</button></td>';
+                tbody.appendChild(row);
+            });
+        })
+        .catch(err => console.error('Reservations error:', err));
 }
 
 // ===========================================================================
@@ -363,31 +400,83 @@ function loadInventory() {
 // REPORTS
 // ===========================================================================
 
-function loadUtilizationReport() {
-    api('/reports/utilization')
+// Build the list of report buttons, then run the first one.
+function loadReportList() {
+    api('/reports')
+        .then(res => res.json())
+        .then(reports => {
+            const picker = document.getElementById('reportPicker');
+            picker.innerHTML = '';
+
+            reports.forEach((report, index) => {
+                const btn = document.createElement('button');
+                btn.type = 'button';
+                btn.className = 'report-btn' + (index === 0 ? ' active' : '');
+                btn.textContent = (index + 1) + '. ' + report.title;
+                btn.onclick = () => {
+                    document.querySelectorAll('.report-btn').forEach(b => b.classList.remove('active'));
+                    btn.classList.add('active');
+                    runReport(report.key);
+                };
+                picker.appendChild(btn);
+            });
+
+            if (reports.length > 0) runReport(reports[0].key);
+        })
+        .catch(err => console.error('Report list error:', err));
+}
+
+// Run one report and render its SQL above the rows it returned.
+function runReport(key) {
+    api('/reports/' + key)
         .then(res => res.json())
         .then(data => {
-            const tbody = document.getElementById('utilizationTable');
-            tbody.innerHTML = '';
+            if (data.error) return showAlert(data.error, 'error');
 
-            if (!Array.isArray(data) || data.length === 0) {
-                return emptyRow(tbody, 5, 'No utilisation data');
+            document.getElementById('reportTitle').textContent = data.title;
+            document.getElementById('reportNote').textContent = data.note;
+            document.getElementById('reportSql').textContent = data.sql;
+            document.getElementById('reportCount').textContent =
+                data.rowCount + (data.rowCount === 1 ? ' row returned' : ' rows returned');
+
+            // The columns come back with the result, so one renderer handles
+            // all six reports without hardcoding any column names.
+            const head = document.getElementById('reportHead');
+            head.innerHTML = '<tr>' +
+                data.columns.map(c => '<th>' + esc(c) + '</th>').join('') + '</tr>';
+
+            const body = document.getElementById('reportBody');
+            body.innerHTML = '';
+
+            if (data.rows.length === 0) {
+                return emptyRow(body, data.columns.length, 'This report returned no rows');
             }
 
-            data.forEach(item => {
-                const times = Number(item.timesborrowed) || 0;
-                const row = document.createElement('tr');
-                row.innerHTML =
-                    '<td>' + esc(item.assetname) + '</td>' +
-                    '<td>' + esc(item.categoryname) + '</td>' +
-                    '<td>' + esc(item.roomname) + '</td>' +
-                    '<td>' + times + '</td>' +
-                    '<td>' + (item.lastborrowed ? shortDate(item.lastborrowed)
-                        : '<em>Never borrowed</em>') + '</td>';
-                tbody.appendChild(row);
+            data.rows.forEach(row => {
+                const tr = document.createElement('tr');
+                tr.innerHTML = data.columns.map(c => '<td>' + formatCell(row[c]) + '</td>').join('');
+                body.appendChild(tr);
             });
         })
-        .catch(err => console.error('Reports error:', err));
+        .catch(err => console.error('Report error:', err));
+}
+
+// Dates arrive as ISO strings; show them the way the rest of the app does.
+function formatCell(value) {
+    if (value === null || value === undefined) return '<em>-</em>';
+    if (typeof value === 'string' && /^\d{4}-\d{2}-\d{2}T/.test(value)) {
+        return shortDate(value);
+    }
+    return esc(value);
+}
+
+function toggleSql() {
+    const block = document.getElementById('reportSql');
+    const button = document.getElementById('sqlToggle');
+    const hidden = block.style.display === 'none';
+
+    block.style.display = hidden ? 'block' : 'none';
+    button.textContent = hidden ? 'Hide SQL' : 'Show SQL';
 }
 
 // ===========================================================================
@@ -428,51 +517,124 @@ function submitReservation() {
 }
 
 // ===========================================================================
-// CHECKOUT / RETURN
+// CHECKOUT / RETURN (technician)
+//
+// The normal path is one click: the student reserved the item beforehand, so
+// it appears under "Awaiting Collection" and the technician just presses Issue.
+// The manual form underneath is only for a walk-in who never used the system.
 // ===========================================================================
 
-function onOperationChange() {
-    const operation = document.getElementById('operationType').value;
-    const checkout = operation === 'checkout';
-
-    document.getElementById('checkoutFields').style.display = checkout ? 'block' : 'none';
-    document.getElementById('returnFields').style.display   = checkout ? 'none' : 'block';
+function loadCheckoutReturn() {
+    loadAwaitingCollection();
+    loadReturnQueue();
 }
 
-function processTransaction() {
-    const operation = document.getElementById('operationType').value;
+function loadAwaitingCollection() {
+    api('/reservations')
+        .then(res => res.json())
+        .then(data => {
+            const tbody = document.getElementById('awaitingTable');
+            tbody.innerHTML = '';
 
-    if (operation === 'checkout') {
-        const studentNumber = document.getElementById('techStudentNumber').value.trim();
-        const assetSerial   = document.getElementById('techAssetSerial').value.trim();
+            if (!Array.isArray(data) || data.length === 0) {
+                return emptyRow(tbody, 6, 'Nothing is waiting to be collected');
+            }
 
-        if (!studentNumber || !assetSerial) {
-            return showAlert('Enter both a student number and an asset serial', 'error');
-        }
-
-        apiJson('/technician/checkout', 'POST', {
-            studentNumber: studentNumber, assetSerial: assetSerial
+            data.forEach(r => {
+                const row = document.createElement('tr');
+                row.innerHTML =
+                    '<td>' + esc(r.assetname) + '</td>' +
+                    '<td>' + esc(r.serialnumber) + '</td>' +
+                    '<td>' + esc(r.studentnumber) + '</td>' +
+                    '<td>' + esc(r.reservedby) + '</td>' +
+                    '<td>' + shortDate(r.requestedpickupdate) +
+                        (r.overdue_pickup ? ' <small class="late">(passed)</small>' : '') + '</td>' +
+                    '<td class="row-actions">' +
+                        '<button type="button" class="action-btn btn-reserve" ' +
+                            'onclick="issueReservation(' + r.reservationid + ')">Issue</button>' +
+                        '<button type="button" class="action-btn btn-cancel" ' +
+                            'onclick="cancelReservation(' + r.reservationid + ')">Cancel</button>' +
+                    '</td>';
+                tbody.appendChild(row);
+            });
         })
-            .then(data => {
-                if (data.success) {
-                    showAlert(data.message, 'success');
-                    document.getElementById('techStudentNumber').value = '';
-                    document.getElementById('techAssetSerial').value = '';
-                    loadTechnicianDashboard();
+        .catch(err => console.error('Awaiting collection error:', err));
+}
+
+function loadReturnQueue() {
+    api('/technician/dashboard')
+        .then(res => res.json())
+        .then(data => {
+            const tbody = document.getElementById('returnQueueTable');
+            tbody.innerHTML = '';
+
+            const loans = data.checkedOutDetails || [];
+            if (loans.length === 0) {
+                return emptyRow(tbody, 6, 'Nothing is currently on loan');
+            }
+
+            loans.forEach(item => {
+                const row = document.createElement('tr');
+                row.innerHTML =
+                    '<td>' + esc(item.assetname) + '</td>' +
+                    '<td>' + esc(item.serialnumber) + '</td>' +
+                    '<td>' + esc(item.checkedoutto) + '</td>' +
+                    '<td>' + shortDate(item.duedate) + '</td>' +
+                    '<td>' + (item.duestatus === 'Overdue'
+                        ? '<span class="status-badge overdue">Overdue</span>'
+                        : '<span class="status-badge available">Active</span>') + '</td>' +
+                    '<td class="row-actions">' +
+                        '<select id="cond_' + item.loanid + '" class="inline-select">' +
+                            '<option value="Good">Good</option>' +
+                            '<option value="Like New">Like New</option>' +
+                            '<option value="Fair">Fair</option>' +
+                            '<option value="Damaged">Damaged</option>' +
+                        '</select>' +
+                        '<button type="button" class="action-btn btn-return" ' +
+                            'onclick="returnWithCondition(' + item.loanid + ')">Return</button>' +
+                    '</td>';
+                tbody.appendChild(row);
+            });
+        })
+        .catch(err => console.error('Return queue error:', err));
+}
+
+// One click: reservation becomes a loan, and the reservation is marked Completed.
+function issueReservation(reservationId) {
+    apiJson('/reservations/' + reservationId + '/issue', 'POST', {})
+        .then(data => {
+            if (data.success) {
+                showAlert(data.message, 'success');
+                refreshTechnicianViews();
+            } else {
+                showAlert(data.error, 'error');
+            }
+        })
+        .catch(() => showAlert('Could not issue the reservation', 'error'));
+}
+
+function cancelReservation(reservationId) {
+    if (!confirm('Cancel this reservation and put the item back on the shelf?')) return;
+
+    apiJson('/reservations/' + reservationId + '/cancel', 'POST', {})
+        .then(data => {
+            if (data.success) {
+                showAlert(data.message, 'success');
+                if (currentUser && currentUser.role === 'technician') {
+                    refreshTechnicianViews();
                 } else {
-                    showAlert(data.error, 'error');
+                    loadStudentDashboard();
                 }
-            })
-            .catch(() => showAlert('Checkout failed', 'error'));
+            } else {
+                showAlert(data.error, 'error');
+            }
+        })
+        .catch(() => showAlert('Could not cancel the reservation', 'error'));
+}
 
-    } else {
-        const loanId = document.getElementById('returnLoanId').value.trim();
-        const condition = document.getElementById('returnCondition').value;
-
-        if (!loanId) return showAlert('Enter the loan ID being returned', 'error');
-
-        sendReturn(loanId, condition);
-    }
+function returnWithCondition(loanId) {
+    const select = document.getElementById('cond_' + loanId);
+    sendReturn(loanId, select ? select.value : 'Good');
 }
 
 function confirmReturn(loanId) {
@@ -486,14 +648,60 @@ function sendReturn(loanId, condition) {
         .then(data => {
             if (data.success) {
                 showAlert(data.message, 'success');
-                const field = document.getElementById('returnLoanId');
-                if (field) field.value = '';
-                loadTechnicianDashboard();
+                refreshTechnicianViews();
             } else {
                 showAlert(data.error, 'error');
             }
         })
         .catch(() => showAlert('Return failed', 'error'));
+}
+
+// Refresh whichever technician view is on screen.
+function refreshTechnicianViews() {
+    if (document.getElementById('technicianDashboard').style.display !== 'none') {
+        loadTechnicianDashboard();
+    }
+    if (document.getElementById('checkoutReturn').style.display !== 'none') {
+        loadCheckoutReturn();
+    }
+}
+
+// ---------------------------------------------------------------------------
+// Walk-in checkout: only for someone who turns up without a reservation.
+// ---------------------------------------------------------------------------
+
+function toggleWalkIn() {
+    const panel = document.getElementById('walkInPanel');
+    const button = document.getElementById('walkInToggle');
+    const open = panel.style.display === 'block';
+
+    panel.style.display = open ? 'none' : 'block';
+    button.textContent = open ? 'Walk-in checkout (no reservation)'
+                              : 'Hide walk-in checkout';
+}
+
+function processWalkIn() {
+    const studentNumber = document.getElementById('techStudentNumber').value.trim();
+    const assetSerial   = document.getElementById('techAssetSerial').value.trim();
+
+    if (!studentNumber || !assetSerial) {
+        return showAlert('Enter both a student number and an asset serial', 'error');
+    }
+
+    apiJson('/technician/checkout', 'POST', {
+        studentNumber: studentNumber, assetSerial: assetSerial
+    })
+        .then(data => {
+            if (data.success) {
+                showAlert(data.message, 'success');
+                document.getElementById('techStudentNumber').value = '';
+                document.getElementById('techAssetSerial').value = '';
+                refreshTechnicianViews();
+            } else {
+                showAlert(data.error, 'error');
+            }
+        })
+        .catch(() => showAlert('Checkout failed', 'error'));
 }
 
 // ===========================================================================

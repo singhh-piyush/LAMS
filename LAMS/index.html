@@ -96,6 +96,23 @@
                     <tbody id="studentLoansTable"></tbody>
                 </table>
             </div>
+
+            <h3 style="margin-top: 30px;">Your Reservations</h3>
+            <p class="hint">Items you have booked. Collect them from the technician on the pickup date.</p>
+            <div class="table-wrap">
+                <table>
+                    <thead>
+                        <tr>
+                            <th>Asset Name</th>
+                            <th>Serial Number</th>
+                            <th>Pickup Date</th>
+                            <th>Status</th>
+                            <th>Action</th>
+                        </tr>
+                    </thead>
+                    <tbody id="myReservationsTable"></tbody>
+                </table>
+            </div>
         </div>
 
         <!-- ---------- BROWSE ASSETS ---------- -->
@@ -187,18 +204,53 @@
 
         <!-- ---------- CHECKOUT / RETURN ---------- -->
         <div id="checkoutReturn" class="content-section">
-            <div class="form-container">
-                <h3>Process Checkout or Return</h3>
-                <div class="stack">
-                    <div class="form-group">
-                        <label for="operationType">Operation</label>
-                        <select id="operationType" onchange="onOperationChange()">
-                            <option value="checkout">Checkout Asset</option>
-                            <option value="return">Return Asset</option>
-                        </select>
-                    </div>
+            <h3>Awaiting Collection</h3>
+            <p class="hint">Items students have reserved. Press Issue to hand one over &mdash; the loan is
+               created and the reservation is closed off automatically.</p>
+            <div class="table-wrap">
+                <table>
+                    <thead>
+                        <tr>
+                            <th>Asset Name</th>
+                            <th>Serial Number</th>
+                            <th>Student Number</th>
+                            <th>Reserved By</th>
+                            <th>Pickup Date</th>
+                            <th>Action</th>
+                        </tr>
+                    </thead>
+                    <tbody id="awaitingTable"></tbody>
+                </table>
+            </div>
 
-                    <div id="checkoutFields">
+            <h3 style="margin-top: 30px;">Process a Return</h3>
+            <p class="hint">Pick the condition and press Return. Anything marked Damaged goes to Under Repair.</p>
+            <div class="table-wrap">
+                <table>
+                    <thead>
+                        <tr>
+                            <th>Asset Name</th>
+                            <th>Serial Number</th>
+                            <th>Held By</th>
+                            <th>Due Date</th>
+                            <th>Status</th>
+                            <th>Action</th>
+                        </tr>
+                    </thead>
+                    <tbody id="returnQueueTable"></tbody>
+                </table>
+            </div>
+
+            <!-- Fallback for someone who walks in without having reserved anything -->
+            <div style="margin-top: 30px;">
+                <button type="button" id="walkInToggle" class="link-btn" onclick="toggleWalkIn()">
+                    Walk-in checkout (no reservation)
+                </button>
+
+                <div id="walkInPanel" class="form-container" style="display: none; margin-top: 15px;">
+                    <div class="stack">
+                        <p class="hint">Only for a student who did not reserve the item beforehand.
+                           If it is already reserved, issue it from the list above instead.</p>
                         <div class="form-group">
                             <label for="techStudentNumber">Student Number</label>
                             <input type="text" id="techStudentNumber" placeholder="e.g. 25116045">
@@ -208,26 +260,8 @@
                             <input type="text" id="techAssetSerial" placeholder="e.g. ARD-001-2024">
                         </div>
                         <p class="hint">The due date is set automatically to 7 days from today.</p>
+                        <button type="button" class="action-btn btn-reserve" onclick="processWalkIn()">Issue Asset</button>
                     </div>
-
-                    <div id="returnFields" style="display: none;">
-                        <div class="form-group">
-                            <label for="returnLoanId">Loan ID</label>
-                            <input type="text" id="returnLoanId" placeholder="Loan ID from the dashboard">
-                        </div>
-                        <div class="form-group">
-                            <label for="returnCondition">Condition on Return</label>
-                            <select id="returnCondition">
-                                <option value="Good">Good</option>
-                                <option value="Like New">Like New</option>
-                                <option value="Fair">Fair</option>
-                                <option value="Damaged">Damaged</option>
-                            </select>
-                        </div>
-                        <p class="hint">An item returned damaged is sent to Under Repair automatically.</p>
-                    </div>
-
-                    <button type="button" class="action-btn btn-reserve" onclick="processTransaction()">Process</button>
                 </div>
             </div>
         </div>
@@ -257,21 +291,27 @@
 
         <!-- ---------- REPORTS ---------- -->
         <div id="reports" class="content-section">
-            <h3>Asset Utilisation Report</h3>
-            <p class="hint">How often each item has been borrowed, including items never borrowed.</p>
-            <div class="table-wrap">
-                <table>
-                    <thead>
-                        <tr>
-                            <th>Asset Name</th>
-                            <th>Category</th>
-                            <th>Lab</th>
-                            <th>Times Borrowed</th>
-                            <th>Last Borrowed</th>
-                        </tr>
-                    </thead>
-                    <tbody id="utilizationTable"></tbody>
-                </table>
+            <h3>Database Reports</h3>
+            <p class="hint">Six queries run directly against the PostgreSQL database.
+               Each one shows the SQL that produced the rows beneath it.</p>
+
+            <div class="report-picker" id="reportPicker"></div>
+
+            <div class="report-panel">
+                <h4 id="reportTitle"></h4>
+                <p class="hint" id="reportNote"></p>
+
+                <button type="button" id="sqlToggle" class="link-btn" onclick="toggleSql()">Hide SQL</button>
+                <pre class="sql-block" id="reportSql"></pre>
+
+                <p class="hint" id="reportCount"></p>
+
+                <div class="table-wrap">
+                    <table>
+                        <thead id="reportHead"></thead>
+                        <tbody id="reportBody"></tbody>
+                    </table>
+                </div>
             </div>
         </div>
     </div>
