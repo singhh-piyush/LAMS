@@ -143,25 +143,40 @@ be left hanging as `Pending` after the item has gone out.
 
 The **Inventory** tab is read-only for students. A technician also gets:
 
-- an **Add Asset** form above the table, with Category and Lab chosen from dropdowns
-- **Edit** on each row, for the name, serial number, category, lab, condition and cost
-- **Retire** on each row
+- an **Add Asset** button above the table, which opens a form with Category and Lab chosen
+  from dropdowns
+- **Edit** on each row, which opens the same form filled in, for the name, serial number,
+  category, lab, condition and cost
+- **Remove** on each row
 
 Status is deliberately not editable by hand. It is driven by loans and reservations, and
 letting it be typed in is exactly what would put `asset.status` and the `loan` table out of
 step with each other.
 
-**Retire, not delete.** Equipment is never removed from the database. A `loan` row references
+**Remove, not delete.** Equipment is never deleted from the database. A `loan` row references
 the asset with `ON DELETE RESTRICT`, so deleting anything ever borrowed would either fail or
-destroy the borrowing history. Retiring sets the status to `Decommissioned`, cancels any
+destroy the borrowing history. Removing sets the status to `Decommissioned`, cancels any
 active reservation on it, and keeps every past loan and fine intact — the item simply stops
-being issuable. An item that is currently on loan cannot be retired until it comes back.
+being issuable. An item that is currently on loan cannot be removed until it comes back.
 
 ## Chasing overdue items
 
 Each row of **Overdue Loans & Fines** has an **Email Student** button. The technician
 confirms, and the reminder is built from the loan row and sent through the same mail
 transport as the password reset, so during the demo it lands in the Mailtrap inbox.
+
+Every reminder is recorded on the loan itself:
+
+```sql
+RemindersSent  INTEGER NOT NULL DEFAULT 0,
+LastRemindedAt TIMESTAMP,
+```
+
+so the **Reminders** column shows how many times a student has been chased and when it last
+happened. The columns live on `Loan` rather than on `Fine` because a loan can be overdue
+without ever having been fined — `STM-001-2024` in the seed data is exactly that case, so a
+counter on `Fine` would have nowhere to go. `Fine` is also one-to-many from `Loan`, which
+would leave "which fine row holds the count" with no sensible answer.
 
 ## Reports
 

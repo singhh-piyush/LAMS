@@ -266,7 +266,7 @@ function loadTechnicianDashboard() {
             tbody.innerHTML = '';
 
             if (!Array.isArray(data) || data.length === 0) {
-                return emptyRow(tbody, 8, 'Nothing overdue');
+                return emptyRow(tbody, 9, 'Nothing overdue');
             }
 
             data.forEach(item => {
@@ -280,6 +280,9 @@ function loadTechnicianDashboard() {
                     '<td>' + shortDate(item.duedate) +
                         ' <small>(' + esc(item.daysoverdue) + ' days)</small></td>' +
                     '<td>' + money(item.fineamount) + '</td>' +
+                    '<td>' + (Number(item.reminderssent) > 0
+                        ? esc(item.reminderssent) + ' &middot; ' + shortDate(item.lastremindedat)
+                        : 'Not yet') + '</td>' +
                     '<td><button type="button" class="action-btn btn-reserve" ' +
                         'onclick="emailStudent(' + item.loanid + ', \'' +
                         esc(item.studentname) + '\')">Email Student</button></td>';
@@ -298,6 +301,7 @@ function emailStudent(loanId, studentName) {
         .then(data => {
             if (data.success) {
                 showAlert(data.message, 'success');
+                loadTechnicianDashboard();
             } else {
                 showAlert(data.error, 'error');
             }
@@ -384,12 +388,12 @@ function fillSelect(id, values, placeholder) {
 // INVENTORY
 // ===========================================================================
 
-// Assets currently in the system. A technician also gets Edit and Retire on
-// each row plus the Add Asset form above the table; a student sees neither.
+// Assets currently in the system. A technician also gets Edit and Remove on
+// each row plus the Add Asset button above the table; a student sees neither.
 function loadInventory() {
     const isTechnician = currentUser && currentUser.role === 'technician';
 
-    document.getElementById('addAssetPanel').style.display = isTechnician ? 'block' : 'none';
+    document.getElementById('inventoryToolbar').style.display = isTechnician ? 'flex' : 'none';
     document.getElementById('inventoryActionHeader').style.display = isTechnician ? '' : 'none';
 
     if (isTechnician) loadAssetLookups();
@@ -406,18 +410,18 @@ function loadInventory() {
             }
 
             data.forEach(item => {
-                const retired = item.status === 'Decommissioned';
+                const removed = item.status === 'Decommissioned';
 
                 let actions = '';
                 if (isTechnician) {
-                    actions = '<td class="row-actions">' +
+                    actions = '<td><div class="row-actions">' +
                         '<button type="button" class="action-btn btn-small" ' +
-                            'onclick="openEditAsset(' + item.assetid + ')">Edit</button>' +
-                        (retired ? '' :
-                            '<button type="button" class="action-btn btn-cancel" ' +
-                            'onclick="retireAsset(' + item.assetid + ', \'' +
-                            esc(item.assetname) + '\')">Retire</button>') +
-                        '</td>';
+                            'onclick="openAssetModal(' + item.assetid + ')">Edit</button>' +
+                        (removed ? '' :
+                            '<button type="button" class="action-btn btn-small btn-cancel" ' +
+                            'onclick="removeAsset(' + item.assetid + ', \'' +
+                            esc(item.assetname) + '\')">Remove</button>') +
+                        '</div></td>';
                 }
 
                 const row = document.createElement('tr');
@@ -443,7 +447,9 @@ function loadInventory() {
 }
 
 // ---------------------------------------------------------------------------
-// ADD / EDIT / RETIRE ASSETS (technician)
+// ADD / EDIT / REMOVE ASSETS (technician)
+// Add and Edit share one modal: the only differences are the title, the button
+// label, and whether we POST a new asset or PUT an existing one.
 // ---------------------------------------------------------------------------
 
 let inventoryCache = [];
@@ -457,10 +463,8 @@ function loadAssetLookups() {
         .then(res => res.json())
         .then(data => {
             lookups = data;
-            ['newAssetCategory', 'editAssetCategory'].forEach(id =>
-                fillLookup(id, data.categories, 'categoryid', 'categoryname'));
-            ['newAssetRoom', 'editAssetRoom'].forEach(id =>
-                fillLookup(id, data.rooms, 'roomid', 'roomname'));
+            fillLookup('assetCategory', data.categories, 'categoryid', 'categoryname');
+            fillLookup('assetRoom', data.rooms, 'roomid', 'roomname');
         })
         .catch(err => console.error('Lookups error:', err));
 }
@@ -477,90 +481,81 @@ function fillLookup(selectId, rows, valueKey, labelKey) {
     });
 }
 
-function addAsset() {
-    const body = {
-        assetName:    document.getElementById('newAssetName').value.trim(),
-        serialNumber: document.getElementById('newAssetSerial').value.trim(),
-        categoryId:   document.getElementById('newAssetCategory').value,
-        roomId:       document.getElementById('newAssetRoom').value,
-        condition:    document.getElementById('newAssetCondition').value,
-        cost:         document.getElementById('newAssetCost').value
-    };
+// assetId null means "add a new one".
+function openAssetModal(assetId) {
+    editingAssetId = assetId;
 
-    if (!body.assetName || !body.serialNumber) {
-        return showAlert('Enter both an asset name and a serial number', 'error');
+    const adding = assetId === null;
+    document.getElementById('assetModalTitle').textContent = adding ? 'Add Asset' : 'Edit Asset';
+    document.getElementById('assetModalSave').textContent = adding ? 'Add Asset' : 'Save Changes';
+
+    if (adding) {
+        document.getElementById('assetName').value = '';
+        document.getElementById('assetSerial').value = '';
+        document.getElementById('assetCost').value = '';
+        document.getElementById('assetCondition').value = 'Good';
+    } else {
+        const asset = inventoryCache.find(a => a.assetid === assetId);
+        if (!asset) return;
+
+        document.getElementById('assetName').value = asset.assetname;
+        document.getElementById('assetSerial').value = asset.serialnumber;
+        document.getElementById('assetCondition').value = asset.condition;
+        document.getElementById('assetCost').value = asset.cost == null ? '' : asset.cost;
+
+        // Match the dropdowns by name, since the table carries names not ids.
+        const category = lookups.categories.find(c => c.categoryname === asset.categoryname);
+        const room = lookups.rooms.find(r => r.roomname === asset.roomname);
+        if (category) document.getElementById('assetCategory').value = category.categoryid;
+        if (room) document.getElementById('assetRoom').value = room.roomid;
     }
 
-    apiJson('/assets', 'POST', body)
-        .then(data => {
-            if (data.success) {
-                showAlert(data.message, 'success');
-                ['newAssetName', 'newAssetSerial', 'newAssetCost'].forEach(id =>
-                    document.getElementById(id).value = '');
-                loadInventory();
-            } else {
-                showAlert(data.error, 'error');
-            }
-        })
-        .catch(() => showAlert('Could not add the asset', 'error'));
+    document.getElementById('assetModal').style.display = 'block';
 }
 
-function openEditAsset(assetId) {
-    const asset = inventoryCache.find(a => a.assetid === assetId);
-    if (!asset) return;
-
-    editingAssetId = assetId;
-    document.getElementById('editAssetName').value = asset.assetname;
-    document.getElementById('editAssetSerial').value = asset.serialnumber;
-    document.getElementById('editAssetCondition').value = asset.condition;
-    document.getElementById('editAssetCost').value = asset.cost == null ? '' : asset.cost;
-
-    // Match the dropdowns to the asset by name, since the table gives names not ids.
-    const category = lookups.categories.find(c => c.categoryname === asset.categoryname);
-    const room = lookups.rooms.find(r => r.roomname === asset.roomname);
-    if (category) document.getElementById('editAssetCategory').value = category.categoryid;
-    if (room) document.getElementById('editAssetRoom').value = room.roomid;
-
-    document.getElementById('editAssetModal').style.display = 'block';
-}
-
-function closeEditAsset() {
-    document.getElementById('editAssetModal').style.display = 'none';
+function closeAssetModal() {
+    document.getElementById('assetModal').style.display = 'none';
     editingAssetId = null;
 }
 
-function saveAsset() {
+function saveAssetModal() {
     const body = {
-        assetName:    document.getElementById('editAssetName').value.trim(),
-        serialNumber: document.getElementById('editAssetSerial').value.trim(),
-        categoryId:   document.getElementById('editAssetCategory').value,
-        roomId:       document.getElementById('editAssetRoom').value,
-        condition:    document.getElementById('editAssetCondition').value,
-        cost:         document.getElementById('editAssetCost').value
+        assetName:    document.getElementById('assetName').value.trim(),
+        serialNumber: document.getElementById('assetSerial').value.trim(),
+        categoryId:   document.getElementById('assetCategory').value,
+        roomId:       document.getElementById('assetRoom').value,
+        condition:    document.getElementById('assetCondition').value,
+        cost:         document.getElementById('assetCost').value
     };
 
     if (!body.assetName || !body.serialNumber) {
         return showAlert('Enter both an asset name and a serial number', 'error');
     }
 
-    apiJson('/assets/' + editingAssetId, 'PUT', body)
+    const adding = editingAssetId === null;
+    const request = adding
+        ? apiJson('/assets', 'POST', body)
+        : apiJson('/assets/' + editingAssetId, 'PUT', body);
+
+    request
         .then(data => {
             if (data.success) {
                 showAlert(data.message, 'success');
-                closeEditAsset();
+                closeAssetModal();
                 loadInventory();
             } else {
                 showAlert(data.error, 'error');
             }
         })
-        .catch(() => showAlert('Could not update the asset', 'error'));
+        .catch(() => showAlert(adding ? 'Could not add the asset' : 'Could not update the asset', 'error'));
 }
 
-// Equipment is retired rather than deleted, so its loan history survives.
-function retireAsset(assetId, assetName) {
-    if (!confirm('Retire ' + assetName + '?\n\nIt stays in the database with its loan history, but can no longer be issued.')) return;
+// Removing an asset takes it out of circulation but keeps its loan history,
+// because past loans and fines still reference it.
+function removeAsset(assetId, assetName) {
+    if (!confirm('Remove ' + assetName + ' from the inventory?\n\nIt can no longer be issued. Its past loans and fines are kept.')) return;
 
-    apiJson('/assets/' + assetId + '/retire', 'POST', {})
+    apiJson('/assets/' + assetId + '/remove', 'POST', {})
         .then(data => {
             if (data.success) {
                 showAlert(data.message, 'success');
@@ -569,7 +564,7 @@ function retireAsset(assetId, assetName) {
                 showAlert(data.error, 'error');
             }
         })
-        .catch(() => showAlert('Could not retire the asset', 'error'));
+        .catch(() => showAlert('Could not remove the asset', 'error'));
 }
 
 // ===========================================================================
@@ -720,12 +715,12 @@ function loadAwaitingCollection() {
                     '<td>' + esc(r.reservedby) + '</td>' +
                     '<td>' + shortDate(r.requestedpickupdate) +
                         (r.overdue_pickup ? ' <small class="late">(passed)</small>' : '') + '</td>' +
-                    '<td class="row-actions">' +
+                    '<td><div class="row-actions">' +
                         '<button type="button" class="action-btn btn-reserve" ' +
                             'onclick="issueReservation(' + r.reservationid + ')">Issue</button>' +
                         '<button type="button" class="action-btn btn-cancel" ' +
                             'onclick="cancelReservation(' + r.reservationid + ')">Cancel</button>' +
-                    '</td>';
+                    '</div></td>';
                 tbody.appendChild(row);
             });
         })
@@ -754,7 +749,7 @@ function loadReturnQueue() {
                     '<td>' + (item.duestatus === 'Overdue'
                         ? '<span class="status-badge overdue">Overdue</span>'
                         : '<span class="status-badge available">Active</span>') + '</td>' +
-                    '<td class="row-actions">' +
+                    '<td><div class="row-actions">' +
                         '<select id="cond_' + item.loanid + '" class="inline-select">' +
                             '<option value="Good">Good</option>' +
                             '<option value="Like New">Like New</option>' +
@@ -763,7 +758,7 @@ function loadReturnQueue() {
                         '</select>' +
                         '<button type="button" class="action-btn btn-return" ' +
                             'onclick="returnWithCondition(' + item.loanid + ')">Return</button>' +
-                    '</td>';
+                    '</div></td>';
                 tbody.appendChild(row);
             });
         })
@@ -952,5 +947,5 @@ window.addEventListener('DOMContentLoaded', () => {
 window.onclick = (event) => {
     if (event.target === document.getElementById('reservationModal')) closeModal();
     if (event.target === document.getElementById('forgotModal')) closeForgotPassword();
-    if (event.target === document.getElementById('editAssetModal')) closeEditAsset();
+    if (event.target === document.getElementById('assetModal')) closeAssetModal();
 };

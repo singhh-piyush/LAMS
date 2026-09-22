@@ -87,8 +87,14 @@ CREATE TABLE Loan (
     ReturnDate        DATE,
     ConditionOnReturn VARCHAR(20) CHECK (ConditionOnReturn IN ('Like New', 'Good', 'Fair', 'Damaged', 'Not Returned')),
     Notes             TEXT,
+    -- overdue chasing: how many reminder emails have gone out for this loan,
+    -- and when the last one was sent. Kept on the loan rather than on the fine
+    -- because a loan can be overdue without ever being fined.
+    RemindersSent     INTEGER NOT NULL DEFAULT 0,
+    LastRemindedAt    TIMESTAMP,
     -- a return can never be dated before the item went out
-    CONSTRAINT loan_return_after_checkout CHECK (ReturnDate IS NULL OR ReturnDate >= CheckoutDate::DATE)
+    CONSTRAINT loan_return_after_checkout CHECK (ReturnDate IS NULL OR ReturnDate >= CheckoutDate::DATE),
+    CONSTRAINT loan_reminders_not_negative CHECK (RemindersSent >= 0)
 );
 
 -- BUSINESS RULE AS A DATABASE CONSTRAINT:
@@ -293,6 +299,14 @@ INSERT INTO Maintenance (AssetID, MaintenanceDate, ServiceType, Cost, Technician
 (13, CURRENT_DATE - 19, 'Motor Repair',           120.00, 'Nalini Sharma', 'Left drive motor rewound'),
 ( 1, CURRENT_DATE - 12, 'USB Port Repair',         18.50, 'Ahmed Hassan',  'Resoldered loose USB connector'),
 ( 4, CURRENT_DATE -  6, 'Calibration',             40.00, 'Nalini Sharma', 'Recalibrated after damaged return');
+
+-- Two of the overdue loans have already been chased, so the reminder column
+-- is populated during the demo. Siphelele's is deliberately left at zero.
+UPDATE Loan SET RemindersSent = 2, LastRemindedAt = CURRENT_TIMESTAMP - INTERVAL '2 days'
+WHERE AssetID = 3 AND ReturnDate IS NULL;
+
+UPDATE Loan SET RemindersSent = 1, LastRemindedAt = CURRENT_TIMESTAMP - INTERVAL '1 day'
+WHERE AssetID = 11 AND ReturnDate IS NULL;
 
 -- Reservations
 INSERT INTO Reservation (AssetID, UserID, RequestedPickupDate, Status) VALUES

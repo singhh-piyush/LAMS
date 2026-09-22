@@ -757,11 +757,14 @@ table tbody tr:last-child td {
 /* ============================================================================
    TABLE ROW ACTIONS
    ============================================================================ */
+/* Keeps the buttons in an action cell side by side instead of stacking. Sits on an
+   inner div so the <td> stays a normal table cell and keeps the row background. */
 .row-actions {
     display: flex;
     gap: 6px;
     align-items: center;
-    flex-wrap: wrap;
+    flex-wrap: nowrap;
+    white-space: nowrap;
 }
 
 .inline-select {
@@ -804,6 +807,25 @@ table tbody tr:last-child td {
 .status-badge.cancelled {
     background: #e2e8f0;
     color: #374151;
+}
+
+/* Controls sitting above a table, same shape as .search-bar */
+.toolbar {
+    display: flex;
+    gap: 10px;
+    margin-bottom: 20px;
+    flex-wrap: wrap;
+}
+
+/* Two fields across inside a modal, so the form is not one tall column */
+.form-row {
+    display: flex;
+    gap: 15px;
+}
+
+.form-row .form-group {
+    flex: 1;
+    margin-bottom: 0;
 }
 
 /* ============================================================================
@@ -856,7 +878,18 @@ table tbody tr:last-child td {
     background: #ddd;
 }
 
+/* The add/edit asset modal holds two fields across, so it needs more width */
+#assetModal .modal-content {
+    max-width: 640px;
+}
+
 @media (max-width: 768px) {
+    .form-row {
+        flex-direction: column;
+        gap: 15px;
+    }
+
+
     .header {
         flex-direction: column;
         padding: 15px 20px;

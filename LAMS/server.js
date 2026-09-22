@@ -398,10 +398,11 @@ app.put('/api/assets/:id', requireTechnician, async (req, res) => {
     }
 });
 
-// Retire an asset. Equipment is never deleted: a loan row references the asset,
-// so deleting it would either fail or destroy the borrowing history. Retiring
-// marks it Decommissioned and keeps every past loan intact.
-app.post('/api/assets/:id/retire', requireTechnician, async (req, res) => {
+// Remove an asset from circulation. It is never actually deleted: a loan row
+// references the asset, so deleting it would either fail on the foreign key or
+// destroy the borrowing history. This marks it Decommissioned instead, which
+// keeps every past loan and fine intact.
+app.post('/api/assets/:id/remove', requireTechnician, async (req, res) => {
     const client = await pool.connect();
     try {
         await client.query('BEGIN');
@@ -418,29 +419,32 @@ app.post('/api/assets/:id/retire', requireTechnician, async (req, res) => {
         const a = asset.rows[0];
         if (a.status === 'Decommissioned') {
             await client.query('ROLLBACK');
-            return res.json({ success: false, error: `${a.assetname} is already retired` });
+            return res.json({ success: false, error: `${a.assetname} has already been removed` });
         }
         if (a.status === 'Checked Out') {
             await client.query('ROLLBACK');
             return res.json({ success: false, error: `${a.assetname} is on loan - take the return first` });
         }
 
-        // A retired item must not stay booked for somebody.
+        // A removed item must not stay booked for somebody.
         await client.query(
             "UPDATE reservation SET status = 'Cancelled' WHERE assetid = $1 AND status IN ('Pending','Confirmed')",
             [a.assetid]
         );
+        // Only the status changes. Condition records the physical state of the item
+        // and is still worth keeping on a removed asset - overwriting it would throw
+        // away the last thing we knew about it.
         await client.query(
-            "UPDATE asset SET status = 'Decommissioned', condition = 'Decommissioned' WHERE assetid = $1",
+            "UPDATE asset SET status = 'Decommissioned' WHERE assetid = $1",
             [a.assetid]
         );
 
         await client.query('COMMIT');
-        res.json({ success: true, message: `${a.assetname} retired. Its loan history is kept.` });
+        res.json({ success: true, message: `${a.assetname} removed. Its loan history is kept.` });
     } catch (error) {
         await client.query('ROLLBACK');
-        console.error('Retire asset error:', error.message);
-        res.status(500).json({ success: false, error: 'Could not retire the asset' });
+        console.error('Remove asset error:', error.message);
+        res.status(500).json({ success: false, error: 'Could not remove the asset' });
     } finally {
         client.release();
     }
@@ -457,13 +461,15 @@ app.get('/api/overdue', requireTechnician, async (req, res) => {
                    a.assetname, a.serialnumber,
                    u.studentnumber, u.phonenumber, u.email,
                    u.firstname || ' ' || u.lastname AS studentname,
-                   COALESCE(SUM(f.fineamount) FILTER (WHERE f.paid = FALSE), 0) AS fineamount
+                   COALESCE(SUM(DISTINCT f.fineamount) FILTER (WHERE f.paid = FALSE), 0) AS fineamount,
+                   l.reminderssent, l.lastremindedat
             FROM loan l
             JOIN asset a  ON l.assetid = a.assetid
             JOIN users u  ON l.userid  = u.userid
             LEFT JOIN fine f ON l.loanid = f.loanid
             WHERE l.returndate IS NULL AND l.duedate < CURRENT_DATE
-            GROUP BY l.loanid, l.duedate, a.assetname, a.serialnumber,
+            GROUP BY l.loanid, l.duedate, l.reminderssent, l.lastremindedat,
+                     a.assetname, a.serialnumber,
                      u.studentnumber, u.phonenumber, u.email, u.firstname, u.lastname
             ORDER BY l.duedate ASC
         `);
@@ -525,6 +531,14 @@ app.post('/api/overdue/:loanId/notify', requireTechnician, async (req, res) => {
             subject: `Overdue equipment: ${row.serialnumber}`,
             text: lines.join('\n')
         });
+
+        // Record that this loan has been chased.
+        await pool.query(
+            `UPDATE loan SET reminderssent = reminderssent + 1,
+                             lastremindedat = CURRENT_TIMESTAMP
+             WHERE loanid = $1`,
+            [req.params.loanId]
+        );
 
         res.json({ success: true, message: `Reminder sent to ${row.firstname} (${row.email})` });
     } catch (error) {
