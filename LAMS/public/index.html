@@ -338,24 +338,25 @@
         <!-- ---------- BROWSE TABLES ---------- -->
         <div id="dataTables" class="content-section">
             <h3>Browse Tables</h3>
+            <div class="reports-layout">
+                <nav class="report-nav" id="tablePicker"></nav>
 
-            <div class="table-picker" id="tablePicker"></div>
-
-            <div class="report-panel">
-                <div class="report-meta">
-                    <div>
-                        <h4 id="tableTitle"></h4>
+                <div class="report-panel">
+                    <div class="report-meta">
+                        <div>
+                            <h4 id="tableTitle"></h4>
+                        </div>
+                        <span class="row-count" id="tableCount"></span>
                     </div>
-                    <span class="row-count" id="tableCount"></span>
-                </div>
 
-                <div class="filter-bar" id="tableFilters"></div>
+                    <div class="filter-bar" id="tableFilters"></div>
 
-                <div class="table-wrap">
-                    <table>
-                        <thead id="tableHead"></thead>
-                        <tbody id="tableBody"></tbody>
-                    </table>
+                    <div class="table-wrap">
+                        <table>
+                            <thead id="tableHead"></thead>
+                            <tbody id="tableBody"></tbody>
+                        </table>
+                    </div>
                 </div>
             </div>
         </div>

@@ -226,9 +226,10 @@ other students' details. The SQL for each one is in `LAMS/server.js`, in the `RE
 ## Browsing the tables
 
 The **Browse Tables** tab is the reports' counterpart: instead of six fixed questions it shows
-the tables themselves, picked from a row of buttons and narrowed down with filters. It is its
-own tab rather than a second list inside Reports so the table underneath gets the full width
-of the page — `Loan` is ten columns wide.
+the tables themselves, picked from the list down the left and narrowed down with filters. It
+is laid out like the Reports tab and is its own tab rather than a second list inside Reports,
+which is what kept both readable. `Loan` is ten columns wide, so on a narrow window it scrolls
+sideways inside its own panel rather than stretching the page.
 
 Each table has the filters that are actually useful for it:
 

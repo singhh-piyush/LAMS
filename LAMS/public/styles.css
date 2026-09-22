@@ -753,15 +753,6 @@ table tbody tr:last-child td {
     white-space: nowrap;
 }
 
-/* Browse Tables picks its table from a row above the panel rather than a side
-   column, so the table underneath gets the full width of the page. */
-.table-picker {
-    display: flex;
-    flex-wrap: wrap;
-    gap: 8px;
-    margin-bottom: 20px;
-}
-
 /* Filter controls above a browsed table. Same look as the .search-bar on Browse
    Assets, but laid out in labelled fields because there are more of them. */
 .filter-bar {
