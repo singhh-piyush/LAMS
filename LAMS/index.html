@@ -98,7 +98,6 @@
             </div>
 
             <h3 style="margin-top: 30px;">Your Reservations</h3>
-            <p class="hint">Items you have booked. Collect them from the technician on the pickup date.</p>
             <div class="table-wrap">
                 <table>
                     <thead>
@@ -204,9 +203,32 @@
 
         <!-- ---------- CHECKOUT / RETURN ---------- -->
         <div id="checkoutReturn" class="content-section">
-            <h3>Awaiting Collection</h3>
-            <p class="hint">Items students have reserved. Press Issue to hand one over &mdash; the loan is
-               created and the reservation is closed off automatically.</p>
+            <div class="form-container">
+                <h3>Walk-in Checkout / Return</h3>
+                <div class="stack">
+                    <div class="form-group">
+                        <label for="techStudentNumber">Student Number</label>
+                        <input type="text" id="techStudentNumber" placeholder="Enter student number" required>
+                    </div>
+
+                    <div class="form-group">
+                        <label for="techAssetSerial">Asset Serial Number</label>
+                        <input type="text" id="techAssetSerial" placeholder="Enter asset serial or loan ID" required>
+                    </div>
+
+                    <div class="form-group">
+                        <label for="operationType">Operation</label>
+                        <select id="operationType" required>
+                            <option value="checkout">Checkout Asset</option>
+                            <option value="return">Return Asset</option>
+                        </select>
+                    </div>
+
+                    <button type="button" class="action-btn btn-reserve" onclick="processTransaction()">Process</button>
+                </div>
+            </div>
+
+            <h3 style="margin-top: 30px;">Awaiting Collection</h3>
             <div class="table-wrap">
                 <table>
                     <thead>
@@ -224,7 +246,6 @@
             </div>
 
             <h3 style="margin-top: 30px;">Process a Return</h3>
-            <p class="hint">Pick the condition and press Return. Anything marked Damaged goes to Under Repair.</p>
             <div class="table-wrap">
                 <table>
                     <thead>
@@ -239,30 +260,6 @@
                     </thead>
                     <tbody id="returnQueueTable"></tbody>
                 </table>
-            </div>
-
-            <!-- Fallback for someone who walks in without having reserved anything -->
-            <div style="margin-top: 30px;">
-                <button type="button" id="walkInToggle" class="link-btn" onclick="toggleWalkIn()">
-                    Walk-in checkout (no reservation)
-                </button>
-
-                <div id="walkInPanel" class="form-container" style="display: none; margin-top: 15px;">
-                    <div class="stack">
-                        <p class="hint">Only for a student who did not reserve the item beforehand.
-                           If it is already reserved, issue it from the list above instead.</p>
-                        <div class="form-group">
-                            <label for="techStudentNumber">Student Number</label>
-                            <input type="text" id="techStudentNumber" placeholder="e.g. 25116045">
-                        </div>
-                        <div class="form-group">
-                            <label for="techAssetSerial">Asset Serial Number</label>
-                            <input type="text" id="techAssetSerial" placeholder="e.g. ARD-001-2024">
-                        </div>
-                        <p class="hint">The due date is set automatically to 7 days from today.</p>
-                        <button type="button" class="action-btn btn-reserve" onclick="processWalkIn()">Issue Asset</button>
-                    </div>
-                </div>
             </div>
         </div>
 
@@ -299,7 +296,6 @@
                     <div class="report-meta">
                         <div>
                             <h4 id="reportTitle"></h4>
-                            <p class="hint" id="reportNote"></p>
                         </div>
                         <span class="row-count" id="reportCount"></span>
                     </div>
@@ -337,7 +333,6 @@
         <button class="close-btn" onclick="closeForgotPassword()">&times;</button>
         <h3>Reset Your Password</h3>
         <div class="stack">
-            <p class="hint">Enter the email address on your LAMS account and we will send you a reset link.</p>
             <div class="form-group">
                 <label for="forgotEmail">Email Address</label>
                 <input type="email" id="forgotEmail" placeholder="you@dut.ac.za">

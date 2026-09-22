@@ -434,7 +434,6 @@ function runReport(key) {
             if (data.error) return showAlert(data.error, 'error');
 
             document.getElementById('reportTitle').textContent = data.title;
-            document.getElementById('reportNote').textContent = data.description;
             document.getElementById('reportCount').textContent =
                 data.rowCount + (data.rowCount === 1 ? ' record' : ' records');
 
@@ -663,41 +662,45 @@ function refreshTechnicianViews() {
 }
 
 // ---------------------------------------------------------------------------
-// Walk-in checkout: only for someone who turns up without a reservation.
+// Walk-in checkout / return, for a student who did not reserve the item.
 // ---------------------------------------------------------------------------
 
-function toggleWalkIn() {
-    const panel = document.getElementById('walkInPanel');
-    const button = document.getElementById('walkInToggle');
-    const open = panel.style.display === 'block';
-
-    panel.style.display = open ? 'none' : 'block';
-    button.textContent = open ? 'Walk-in checkout (no reservation)'
-                              : 'Hide walk-in checkout';
-}
-
-function processWalkIn() {
+function processTransaction() {
     const studentNumber = document.getElementById('techStudentNumber').value.trim();
     const assetSerial   = document.getElementById('techAssetSerial').value.trim();
+    const operation     = document.getElementById('operationType').value;
 
-    if (!studentNumber || !assetSerial) {
-        return showAlert('Enter both a student number and an asset serial', 'error');
-    }
+    if (operation === 'checkout') {
+        if (!studentNumber || !assetSerial) {
+            return showAlert('Enter both a student number and an asset serial', 'error');
+        }
 
-    apiJson('/technician/checkout', 'POST', {
-        studentNumber: studentNumber, assetSerial: assetSerial
-    })
-        .then(data => {
-            if (data.success) {
-                showAlert(data.message, 'success');
-                document.getElementById('techStudentNumber').value = '';
-                document.getElementById('techAssetSerial').value = '';
-                refreshTechnicianViews();
-            } else {
-                showAlert(data.error, 'error');
-            }
+        apiJson('/technician/checkout', 'POST', {
+            studentNumber: studentNumber, assetSerial: assetSerial
         })
-        .catch(() => showAlert('Checkout failed', 'error'));
+            .then(data => {
+                if (data.success) {
+                    showAlert(data.message, 'success');
+                    clearTransactionForm();
+                    refreshTechnicianViews();
+                } else {
+                    showAlert(data.error, 'error');
+                }
+            })
+            .catch(() => showAlert('Checkout failed', 'error'));
+
+    } else {
+        // For a return the second field carries the loan ID.
+        if (!assetSerial) {
+            return showAlert('Enter the loan ID being returned', 'error');
+        }
+        sendReturn(assetSerial, 'Good');
+    }
+}
+
+function clearTransactionForm() {
+    document.getElementById('techStudentNumber').value = '';
+    document.getElementById('techAssetSerial').value = '';
 }
 
 // ===========================================================================

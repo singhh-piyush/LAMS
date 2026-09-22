@@ -761,7 +761,6 @@ const REPORTS = {
     register: {
         label: 'Asset Register',
         title: 'Asset Register',
-        description: 'Every item held by the lab, with its category, storage location and current condition.',
         sql: `SELECT a.SerialNumber   AS "Asset Tag",
        a.AssetName     AS "Equipment",
        ac.CategoryName AS "Category",
@@ -777,7 +776,6 @@ ORDER BY ac.CategoryName, a.AssetName;`
     onloan: {
         label: 'Items on Loan',
         title: 'Items Currently on Loan',
-        description: 'Equipment signed out at the moment, who is holding it and when it falls due.',
         sql: `SELECT a.SerialNumber AS "Asset Tag",
        a.AssetName    AS "Equipment",
        u.StudentNumber AS "Student Number",
@@ -795,7 +793,6 @@ ORDER BY l.DueDate ASC;`
     overdue: {
         label: 'Overdue Items',
         title: 'Overdue Items',
-        description: 'Loans past their due date with nothing returned, including a contact number for follow-up.',
         sql: `SELECT a.SerialNumber AS "Asset Tag",
        a.AssetName    AS "Equipment",
        u.StudentNumber AS "Student Number",
@@ -814,7 +811,6 @@ ORDER BY CURRENT_DATE - l.DueDate DESC;`
     utilisation: {
         label: 'Equipment Utilisation',
         title: 'Equipment Utilisation',
-        description: 'How often each item has been issued, including equipment that has never been borrowed.',
         sql: `SELECT a.SerialNumber AS "Asset Tag",
        a.AssetName    AS "Equipment",
        ac.CategoryName AS "Category",
@@ -830,7 +826,6 @@ ORDER BY "Times Borrowed" DESC, a.AssetName ASC;`
     latereturns: {
         label: 'Repeat Late Returns',
         title: 'Repeat Late Returns',
-        description: 'Students who have brought equipment back late on two or more separate occasions.',
         sql: `SELECT u.StudentNumber AS "Student Number",
        u.FirstName || ' ' || u.LastName AS "Student",
        u.PhoneNumber AS "Contact",
@@ -848,7 +843,6 @@ ORDER BY "Late Returns" DESC;`
     maintenance: {
         label: 'Maintenance Spend',
         title: 'Maintenance Spend by Category',
-        description: 'Repair and servicing costs grouped by equipment category, to show where the budget goes.',
         sql: `SELECT ac.CategoryName AS "Category",
        COUNT(m.MaintenanceID) AS "Repairs",
        SUM(m.Cost)            AS "Total Cost",
@@ -870,8 +864,7 @@ app.get('/api/reports', requireTechnician, (req, res) => {
     res.json(Object.keys(REPORTS).map(key => ({
         key: key,
         label: REPORTS[key].label,
-        title: REPORTS[key].title,
-        description: REPORTS[key].description
+        title: REPORTS[key].title
     })));
 });
 
@@ -885,7 +878,6 @@ app.get('/api/reports/:key', requireTechnician, async (req, res) => {
         res.json({
             key: req.params.key,
             title: report.title,
-            description: report.description,
             // The column labels come from the SQL aliases, so the page shows
             // "Student Number" rather than the raw studentnumber column.
             columns: result.fields.map(f => ({

@@ -821,12 +821,6 @@ table tbody tr:last-child td {
     overflow-x: auto;
 }
 
-.hint {
-    font-size: 13px;
-    color: #666;
-    margin: 4px 0 0;
-}
-
 .info-message {
     color: #166534;
     font-size: 14px;
