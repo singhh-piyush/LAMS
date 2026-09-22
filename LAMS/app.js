@@ -571,35 +571,149 @@ function removeAsset(assetId, assetName) {
 // REPORTS
 // ===========================================================================
 
-// Build the list of report buttons, then run the first one.
+// The picker holds two groups: the six fixed reports, and the tables themselves
+// with a filter bar. Both render through the same code below, because the server
+// returns the same shape for either.
+let tableDefs = [];
+let currentSource = null;
+
 function loadReportList() {
-    api('/reports')
-        .then(res => res.json())
-        .then(reports => {
-            const picker = document.getElementById('reportPicker');
-            picker.innerHTML = '';
+    Promise.all([
+        api('/reports').then(res => res.json()),
+        api('/tables').then(res => res.json())
+    ])
+    .then(([reports, tables]) => {
+        tableDefs = Array.isArray(tables) ? tables : [];
 
-            reports.forEach((report, index) => {
-                const btn = document.createElement('button');
-                btn.type = 'button';
-                btn.className = 'report-btn' + (index === 0 ? ' active' : '');
-                btn.textContent = report.label;
-                btn.onclick = () => {
-                    document.querySelectorAll('.report-btn').forEach(b => b.classList.remove('active'));
-                    btn.classList.add('active');
-                    runReport(report.key);
-                };
-                picker.appendChild(btn);
-            });
+        const picker = document.getElementById('reportPicker');
+        picker.innerHTML = '';
 
-            if (reports.length > 0) runReport(reports[0].key);
-        })
-        .catch(err => console.error('Report list error:', err));
+        const first = addPickerGroup(picker, 'Reports', 'report', reports);
+        addPickerGroup(picker, 'Browse Tables', 'table', tableDefs);
+
+        if (first) first.click();
+    })
+    .catch(err => console.error('Report list error:', err));
 }
 
-// Run one report and render its SQL above the rows it returned.
-function runReport(key) {
-    api('/reports/' + key)
+// A heading plus one button per entry. Returns the first button so the page can
+// open something straight away.
+function addPickerGroup(picker, heading, kind, entries) {
+    if (!entries || entries.length === 0) return null;
+
+    const title = document.createElement('p');
+    title.className = 'report-nav-heading';
+    title.textContent = heading;
+    picker.appendChild(title);
+
+    let firstBtn = null;
+
+    entries.forEach(entry => {
+        const btn = document.createElement('button');
+        btn.type = 'button';
+        btn.className = 'report-btn';
+        btn.textContent = entry.label;
+        btn.onclick = () => {
+            document.querySelectorAll('.report-btn').forEach(b => b.classList.remove('active'));
+            btn.classList.add('active');
+            openSource(kind, entry.key);
+        };
+        picker.appendChild(btn);
+        if (!firstBtn) firstBtn = btn;
+    });
+
+    return firstBtn;
+}
+
+function openSource(kind, key) {
+    currentSource = { kind: kind, key: key };
+
+    if (kind === 'report') {
+        buildFilterBar(null);
+        return fetchRows('/reports/' + key, 'This report returned no records');
+    }
+
+    buildFilterBar(tableDefs.find(t => t.key === key));
+    runTableQuery();
+}
+
+// Build the filter controls for one table. Reports have none, so the bar is
+// emptied and hidden for them.
+function buildFilterBar(table) {
+    const bar = document.getElementById('reportFilters');
+    bar.innerHTML = '';
+
+    if (!table || !table.filters || table.filters.length === 0) {
+        bar.style.display = 'none';
+        return;
+    }
+    bar.style.display = '';
+
+    table.filters.forEach(filter => {
+        const field = document.createElement('div');
+        field.className = 'filter-field';
+
+        const label = document.createElement('label');
+        label.textContent = filter.label;
+        label.htmlFor = 'filter_' + filter.key;
+        field.appendChild(label);
+
+        let input;
+        if (filter.type === 'select') {
+            input = document.createElement('select');
+            input.innerHTML = '<option value="">All</option>' +
+                (filter.options || []).map(option =>
+                    '<option value="' + esc(option) + '">' + esc(option) + '</option>'
+                ).join('');
+        } else {
+            input = document.createElement('input');
+            input.type = filter.type === 'date' ? 'date' : 'text';
+            if (filter.placeholder) input.placeholder = filter.placeholder;
+        }
+
+        input.id = 'filter_' + filter.key;
+        input.dataset.filterKey = filter.key;
+        // change covers picking a date, choosing an option, and leaving or
+        // pressing Enter in a text box - so the table is not re-queried on
+        // every keystroke.
+        input.onchange = runTableQuery;
+
+        field.appendChild(input);
+        bar.appendChild(field);
+    });
+
+    const clear = document.createElement('button');
+    clear.type = 'button';
+    clear.className = 'action-btn btn-small btn-cancel';
+    clear.textContent = 'Clear';
+    clear.onclick = () => {
+        bar.querySelectorAll('[data-filter-key]').forEach(el => { el.value = ''; });
+        runTableQuery();
+    };
+    bar.appendChild(clear);
+}
+
+// Send whatever the filter bar currently holds. Anything left blank is left out
+// of the query string, and the server then leaves that filter out of the WHERE.
+function runTableQuery() {
+    if (!currentSource || currentSource.kind !== 'table') return;
+
+    const parts = [];
+    document.querySelectorAll('#reportFilters [data-filter-key]').forEach(el => {
+        const value = el.value.trim();
+        if (value !== '') {
+            parts.push(encodeURIComponent(el.dataset.filterKey) + '=' + encodeURIComponent(value));
+        }
+    });
+
+    fetchRows('/tables/' + currentSource.key + (parts.length ? '?' + parts.join('&') : ''),
+              'No rows match these filters');
+}
+
+// Column labels and types come back with the result, so one renderer handles
+// every report and every table without hardcoding a single column name.
+function fetchRows(path, emptyMessage) {
+    api(path)
         .then(res => res.json())
         .then(data => {
             if (data.error) return showAlert(data.error, 'error');
@@ -608,8 +722,6 @@ function runReport(key) {
             document.getElementById('reportCount').textContent =
                 data.rowCount + (data.rowCount === 1 ? ' record' : ' records');
 
-            // Column labels and types come back with the result, so one renderer
-            // handles all six reports without hardcoding any column names.
             const head = document.getElementById('reportHead');
             head.innerHTML = '<tr>' + data.columns.map(c =>
                 '<th' + (c.numeric ? ' class="num"' : '') + '>' + esc(c.name) + '</th>'
@@ -619,7 +731,7 @@ function runReport(key) {
             body.innerHTML = '';
 
             if (data.rows.length === 0) {
-                return emptyRow(body, data.columns.length, 'This report returned no records');
+                return emptyRow(body, data.columns.length, emptyMessage);
             }
 
             data.rows.forEach(row => {

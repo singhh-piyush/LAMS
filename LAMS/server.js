@@ -1104,6 +1104,346 @@ app.get('/api/reports/:key', requireTechnician, async (req, res) => {
 });
 
 // ============================================================================
+// TABLE BROWSER
+//
+// The six reports above answer fixed questions. This lets a technician look at
+// the underlying tables and narrow them down, most usefully by date.
+//
+// Every table is described here rather than taking a table name from the URL.
+// That keeps the list to these eight, so PasswordReset - and Users.PasswordHash
+// - can never be reached through it. Filter values are always bound as query
+// parameters; only the column labels come from this file.
+// ============================================================================
+
+// Options that the schema already fixes with a CHECK constraint.
+const ASSET_STATUSES   = ['Available', 'Checked Out', 'Reserved', 'Under Repair', 'Decommissioned'];
+const ASSET_CONDITIONS = ['New', 'Good', 'Fair', 'Needs Repair', 'Decommissioned'];
+const RESERVATION_STATUSES = ['Pending', 'Confirmed', 'Completed', 'Cancelled'];
+
+// A loan has no status column - it is implied by the two dates. The same
+// expression is used as a visible column and as the State filter so the two can
+// never disagree.
+const LOAN_STATE = `CASE WHEN l.ReturnDate IS NOT NULL THEN 'Returned'
+          WHEN l.DueDate < CURRENT_DATE  THEN 'Overdue'
+          ELSE 'On Loan' END`;
+
+const FINE_STATE = `CASE WHEN f.Paid THEN 'Paid' ELSE 'Unpaid' END`;
+
+const TABLES = {
+    asset: {
+        label: 'Assets',
+        title: 'Asset',
+        select: `SELECT a.AssetID        AS "ID",
+       a.SerialNumber    AS "Asset Tag",
+       a.AssetName       AS "Equipment",
+       ac.CategoryName   AS "Category",
+       r.RoomName        AS "Lab",
+       a.Condition       AS "Condition",
+       a.Status          AS "Status",
+       a.AcquisitionDate AS "Acquired",
+       a.Cost            AS "Cost"
+FROM Asset a
+JOIN AssetCategory ac ON a.CategoryID = ac.CategoryID
+JOIN Room r           ON a.RoomID     = r.RoomID`,
+        filters: [
+            { key: 'category',  label: 'Category',      type: 'select',
+              optionsSql: 'SELECT CategoryName FROM AssetCategory ORDER BY CategoryName',
+              where: 'ac.CategoryName = $$' },
+            { key: 'lab',       label: 'Lab',           type: 'select',
+              optionsSql: 'SELECT RoomName FROM Room ORDER BY RoomName',
+              where: 'r.RoomName = $$' },
+            { key: 'status',    label: 'Status',        type: 'select', options: ASSET_STATUSES,
+              where: 'a.Status = $$' },
+            { key: 'condition', label: 'Condition',     type: 'select', options: ASSET_CONDITIONS,
+              where: 'a.Condition = $$' },
+            { key: 'from',      label: 'Acquired from', type: 'date',
+              where: 'a.AcquisitionDate >= $$::date' },
+            { key: 'to',        label: 'Acquired to',   type: 'date',
+              where: 'a.AcquisitionDate <= $$::date' },
+            { key: 'q',         label: 'Search',        type: 'search',
+              placeholder: 'Name or asset tag',
+              where: '(a.AssetName ILIKE $$ OR a.SerialNumber ILIKE $$)' }
+        ],
+        orderBy: 'ac.CategoryName, a.AssetName'
+    },
+
+    loan: {
+        label: 'Loans',
+        title: 'Loan',
+        select: `SELECT l.LoanID       AS "ID",
+       a.SerialNumber       AS "Asset Tag",
+       a.AssetName          AS "Equipment",
+       u.StudentNumber      AS "Student Number",
+       u.FirstName || ' ' || u.LastName AS "Borrower",
+       l.CheckoutDate::date AS "Issued",
+       l.DueDate            AS "Due",
+       l.ReturnDate         AS "Returned",
+       ${LOAN_STATE}        AS "State",
+       l.RemindersSent      AS "Reminders"
+FROM Loan l
+JOIN Asset a ON l.AssetID = a.AssetID
+JOIN Users u ON l.UserID  = u.UserID`,
+        filters: [
+            { key: 'state',  label: 'State',       type: 'select',
+              options: ['On Loan', 'Overdue', 'Returned'],
+              where: `${LOAN_STATE} = $$` },
+            { key: 'from',   label: 'Issued from', type: 'date',
+              where: 'l.CheckoutDate::date >= $$::date' },
+            { key: 'to',     label: 'Issued to',   type: 'date',
+              where: 'l.CheckoutDate::date <= $$::date' },
+            { key: 'dueby',  label: 'Due by',      type: 'date',
+              where: 'l.DueDate <= $$::date' },
+            { key: 'q',      label: 'Search',      type: 'search',
+              placeholder: 'Student or equipment',
+              where: `(u.StudentNumber ILIKE $$ OR u.FirstName ILIKE $$ OR u.LastName ILIKE $$
+               OR a.AssetName ILIKE $$ OR a.SerialNumber ILIKE $$)` }
+        ],
+        orderBy: 'l.CheckoutDate DESC, l.LoanID DESC'
+    },
+
+    reservation: {
+        label: 'Reservations',
+        title: 'Reservation',
+        select: `SELECT rs.ReservationID AS "ID",
+       a.SerialNumber          AS "Asset Tag",
+       a.AssetName             AS "Equipment",
+       u.StudentNumber         AS "Student Number",
+       u.FirstName || ' ' || u.LastName AS "Student",
+       rs.ReservationDate::date AS "Booked",
+       rs.RequestedPickupDate  AS "Pickup",
+       rs.Status               AS "Status"
+FROM Reservation rs
+JOIN Asset a ON rs.AssetID = a.AssetID
+JOIN Users u ON rs.UserID  = u.UserID`,
+        filters: [
+            { key: 'status', label: 'Status',      type: 'select', options: RESERVATION_STATUSES,
+              where: 'rs.Status = $$' },
+            { key: 'from',   label: 'Pickup from', type: 'date',
+              where: 'rs.RequestedPickupDate >= $$::date' },
+            { key: 'to',     label: 'Pickup to',   type: 'date',
+              where: 'rs.RequestedPickupDate <= $$::date' },
+            { key: 'q',      label: 'Search',      type: 'search',
+              placeholder: 'Student or equipment',
+              where: `(u.StudentNumber ILIKE $$ OR u.FirstName ILIKE $$ OR u.LastName ILIKE $$
+               OR a.AssetName ILIKE $$ OR a.SerialNumber ILIKE $$)` }
+        ],
+        orderBy: 'rs.RequestedPickupDate DESC, rs.ReservationID DESC'
+    },
+
+    fine: {
+        label: 'Fines',
+        title: 'Fine',
+        select: `SELECT f.FineID   AS "ID",
+       f.LoanID         AS "Loan",
+       a.SerialNumber   AS "Asset Tag",
+       u.StudentNumber  AS "Student Number",
+       u.FirstName || ' ' || u.LastName AS "Student",
+       f.FineAmount     AS "Amount",
+       f.Reason         AS "Reason",
+       f.FineDate       AS "Issued",
+       ${FINE_STATE}    AS "Settled",
+       f.PaidDate       AS "Paid On"
+FROM Fine f
+JOIN Loan l  ON f.LoanID  = l.LoanID
+JOIN Asset a ON l.AssetID = a.AssetID
+JOIN Users u ON l.UserID  = u.UserID`,
+        filters: [
+            { key: 'settled', label: 'Settled',     type: 'select', options: ['Paid', 'Unpaid'],
+              where: `${FINE_STATE} = $$` },
+            { key: 'from',    label: 'Issued from', type: 'date',
+              where: 'f.FineDate >= $$::date' },
+            { key: 'to',      label: 'Issued to',   type: 'date',
+              where: 'f.FineDate <= $$::date' },
+            { key: 'q',       label: 'Search',      type: 'search',
+              placeholder: 'Student or reason',
+              where: `(u.StudentNumber ILIKE $$ OR u.FirstName ILIKE $$ OR u.LastName ILIKE $$
+               OR f.Reason ILIKE $$)` }
+        ],
+        orderBy: 'f.FineDate DESC, f.FineID DESC'
+    },
+
+    maintenance: {
+        label: 'Maintenance',
+        title: 'Maintenance',
+        select: `SELECT m.MaintenanceID AS "ID",
+       a.SerialNumber        AS "Asset Tag",
+       a.AssetName           AS "Equipment",
+       m.MaintenanceDate     AS "Date",
+       m.ServiceType         AS "Service",
+       m.Cost                AS "Cost",
+       m.TechnicianName      AS "Technician",
+       m.Notes               AS "Notes"
+FROM Maintenance m
+JOIN Asset a ON m.AssetID = a.AssetID`,
+        filters: [
+            { key: 'technician', label: 'Technician', type: 'select',
+              optionsSql: 'SELECT DISTINCT TechnicianName FROM Maintenance WHERE TechnicianName IS NOT NULL ORDER BY 1',
+              where: 'm.TechnicianName = $$' },
+            { key: 'from',       label: 'Date from',  type: 'date',
+              where: 'm.MaintenanceDate >= $$::date' },
+            { key: 'to',         label: 'Date to',    type: 'date',
+              where: 'm.MaintenanceDate <= $$::date' },
+            { key: 'q',          label: 'Search',     type: 'search',
+              placeholder: 'Service or equipment',
+              where: '(m.ServiceType ILIKE $$ OR a.AssetName ILIKE $$ OR a.SerialNumber ILIKE $$)' }
+        ],
+        orderBy: 'm.MaintenanceDate DESC, m.MaintenanceID DESC'
+    },
+
+    users: {
+        label: 'Users',
+        title: 'Users',
+        // PasswordHash is deliberately not selected.
+        select: `SELECT u.UserID    AS "ID",
+       u.StudentNumber   AS "Student Number",
+       u.FirstName || ' ' || u.LastName AS "Name",
+       u.Email           AS "Email",
+       u.PhoneNumber     AS "Contact",
+       u.UserType        AS "Role",
+       u.CreatedDate::date AS "Registered",
+       CASE WHEN u.IsActive THEN 'Yes' ELSE 'No' END AS "Active"
+FROM Users u`,
+        filters: [
+            { key: 'role', label: 'Role',            type: 'select',
+              options: ['Student', 'Technician', 'Admin'],
+              where: 'u.UserType = $$' },
+            { key: 'from', label: 'Registered from', type: 'date',
+              where: 'u.CreatedDate::date >= $$::date' },
+            { key: 'to',   label: 'Registered to',   type: 'date',
+              where: 'u.CreatedDate::date <= $$::date' },
+            { key: 'q',    label: 'Search',          type: 'search',
+              placeholder: 'Name, number or email',
+              where: `(u.StudentNumber ILIKE $$ OR u.FirstName ILIKE $$
+               OR u.LastName ILIKE $$ OR u.Email ILIKE $$)` }
+        ],
+        orderBy: 'u.UserType, u.LastName, u.FirstName'
+    },
+
+    assetcategory: {
+        label: 'Categories',
+        title: 'AssetCategory',
+        select: `SELECT ac.CategoryID AS "ID",
+       ac.CategoryName      AS "Category",
+       ac.Description       AS "Description",
+       COUNT(a.AssetID)     AS "Assets"
+FROM AssetCategory ac
+LEFT JOIN Asset a ON ac.CategoryID = a.CategoryID`,
+        groupBy: 'ac.CategoryID, ac.CategoryName, ac.Description',
+        filters: [
+            { key: 'q', label: 'Search', type: 'search', placeholder: 'Category name',
+              where: '(ac.CategoryName ILIKE $$ OR ac.Description ILIKE $$)' }
+        ],
+        orderBy: 'ac.CategoryName'
+    },
+
+    room: {
+        label: 'Labs',
+        title: 'Room',
+        select: `SELECT r.RoomID   AS "ID",
+       r.RoomName       AS "Lab",
+       r.Building       AS "Building",
+       r.Floor          AS "Floor",
+       r.Capacity       AS "Capacity",
+       r.ContactPerson  AS "Contact",
+       COUNT(a.AssetID) AS "Assets"
+FROM Room r
+LEFT JOIN Asset a ON r.RoomID = a.RoomID`,
+        groupBy: 'r.RoomID, r.RoomName, r.Building, r.Floor, r.Capacity, r.ContactPerson',
+        filters: [
+            { key: 'q', label: 'Search', type: 'search', placeholder: 'Lab or building',
+              where: '(r.RoomName ILIKE $$ OR r.Building ILIKE $$ OR r.ContactPerson ILIKE $$)' }
+        ],
+        orderBy: 'r.RoomName'
+    }
+};
+
+// Turn the query string into a WHERE clause. A filter that was left blank is
+// skipped, so the table comes back whole. $$ in a filter's template is replaced
+// by the real placeholder number - reusing one number where a search covers
+// several columns, so the value is only bound once.
+function buildTableQuery(table, query) {
+    const conditions = [];
+    const params = [];
+
+    (table.filters || []).forEach(filter => {
+        const raw = query[filter.key];
+        if (raw === undefined || raw === null || String(raw).trim() === '') return;
+
+        const value = String(raw).trim();
+        params.push(filter.type === 'search' ? `%${value}%` : value);
+        conditions.push(filter.where.replace(/\$\$/g, '$' + params.length));
+    });
+
+    let sql = table.select;
+    if (conditions.length > 0) sql += '\nWHERE ' + conditions.join('\n  AND ');
+    if (table.groupBy)         sql += '\nGROUP BY ' + table.groupBy;
+    if (table.orderBy)         sql += '\nORDER BY ' + table.orderBy;
+    sql += '\nLIMIT 500';
+
+    return { sql: sql, params: params };
+}
+
+// The picker, with each table's filters and the options to put in its dropdowns.
+app.get('/api/tables', requireTechnician, async (req, res) => {
+    try {
+        const list = [];
+
+        for (const key of Object.keys(TABLES)) {
+            const table = TABLES[key];
+            const filters = [];
+
+            for (const filter of table.filters || []) {
+                let options = filter.options || null;
+                if (filter.optionsSql) {
+                    const result = await pool.query(filter.optionsSql);
+                    options = result.rows.map(row => Object.values(row)[0]);
+                }
+                filters.push({
+                    key: filter.key,
+                    label: filter.label,
+                    type: filter.type,
+                    placeholder: filter.placeholder || null,
+                    options: options
+                });
+            }
+
+            list.push({ key: key, label: table.label, title: table.title, filters: filters });
+        }
+
+        res.json(list);
+    } catch (error) {
+        console.error('Table list error:', error.message);
+        res.status(500).json({ error: 'Could not load the table list' });
+    }
+});
+
+// One table, filtered by whatever was sent in the query string.
+app.get('/api/tables/:key', requireTechnician, async (req, res) => {
+    const table = TABLES[req.params.key];
+    if (!table) return res.status(404).json({ error: 'No such table' });
+
+    const { sql, params } = buildTableQuery(table, req.query);
+
+    try {
+        const result = await pool.query(sql, params);
+        res.json({
+            key: req.params.key,
+            title: table.title,
+            columns: result.fields.map(f => ({
+                name: f.name,
+                numeric: NUMERIC_TYPES.has(f.dataTypeID),
+                money: MONEY_TYPES.has(f.dataTypeID)
+            })),
+            rows: result.rows,
+            rowCount: result.rowCount
+        });
+    } catch (error) {
+        console.error(`Table "${req.params.key}" failed:`, error.message);
+        res.status(500).json({ error: 'Could not read that table' });
+    }
+});
+
+// ============================================================================
 // START
 // ============================================================================
 app.listen(PORT, async () => {

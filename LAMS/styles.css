@@ -725,6 +725,10 @@ table tbody tr:last-child td {
     padding: 25px;
     border-radius: 8px;
     box-shadow: 0 2px 8px rgba(0, 0, 0, 0.08);
+    /* A grid item defaults to min-width:auto, so a wide table like Loan would
+       stretch this column and push the whole page sideways. This keeps the
+       table scrolling inside .table-wrap instead. */
+    min-width: 0;
 }
 
 .report-panel h4 {
@@ -749,9 +753,74 @@ table tbody tr:last-child td {
     white-space: nowrap;
 }
 
-/* Counts and money read better right-aligned */
+/* "Reports" / "Browse Tables" headings inside the picker */
+.report-nav-heading {
+    margin: 16px 0 4px;
+    font-size: 11px;
+    font-weight: 700;
+    letter-spacing: 1px;
+    text-transform: uppercase;
+    color: #666;
+}
+
+.report-nav-heading:first-child {
+    margin-top: 0;
+}
+
+/* Filter controls above a browsed table. Same look as the .search-bar on Browse
+   Assets, but laid out in labelled fields because there are more of them. */
+.filter-bar {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: flex-end;
+    gap: 12px;
+    background: #f5f7fa;
+    border: 1px solid #ddd;
+    border-radius: 6px;
+    padding: 15px;
+    margin-bottom: 15px;
+}
+
+.filter-field {
+    display: flex;
+    flex-direction: column;
+    gap: 5px;
+}
+
+.filter-field label {
+    font-weight: 600;
+    color: #333;
+    font-size: 12px;
+}
+
+.filter-field input,
+.filter-field select {
+    padding: 10px 15px;
+    border: 1px solid #ddd;
+    border-radius: 6px;
+    font-size: 14px;
+    font-family: inherit;
+    background: white;
+    transition: border-color 0.3s;
+    min-width: 160px;
+}
+
+.filter-field input:focus,
+.filter-field select:focus {
+    outline: none;
+    border-color: #1e3a8a;
+    box-shadow: 0 0 0 3px rgba(30, 58, 138, 0.1);
+}
+
+/* Clear sits at the far end of the bar */
+.filter-bar > .action-btn {
+    margin-left: auto;
+}
+
+/* Counts and money read better right-aligned, and should not wrap mid-amount */
 .num {
     text-align: right;
+    white-space: nowrap;
 }
 
 /* ============================================================================
@@ -938,6 +1007,20 @@ table tbody tr:last-child td {
 
     .search-bar input,
     .search-bar select {
+        min-width: 100%;
+    }
+
+    /* The report picker sits above the panel instead of beside it */
+    .reports-layout {
+        grid-template-columns: 1fr;
+    }
+
+    .filter-field {
+        width: 100%;
+    }
+
+    .filter-field input,
+    .filter-field select {
         min-width: 100%;
     }
 }

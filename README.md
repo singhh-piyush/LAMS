@@ -191,6 +191,38 @@ other students' details. The SQL for each one is in `LAMS/server.js`, in the `RE
 5. Students with two or more late returns — `GROUP BY ... HAVING`
 6. Total maintenance cost per category
 
+### Browsing the tables
+
+Below the six reports the same page has a **Browse Tables** list, so the tables themselves can
+be looked at and narrowed down rather than only through a fixed report. Each one has the
+filters that are actually useful for it:
+
+| Table | Filters |
+|---|---|
+| `Asset` | category, lab, status, condition, acquired from/to, search |
+| `Loan` | state (On Loan / Overdue / Returned), issued from/to, due by, search |
+| `Reservation` | status, pickup from/to, search |
+| `Fine` | settled (Paid / Unpaid), issued from/to, search |
+| `Maintenance` | technician, date from/to, search |
+| `Users` | role, registered from/to, search |
+| `AssetCategory`, `Room` | search |
+
+A filter left blank is left out of the `WHERE` clause entirely, so clearing everything gives
+the whole table back. `Loan` has no status column - the State filter and the State column both
+come from the same `CASE` expression over `ReturnDate` and `DueDate`, so the two can never
+disagree.
+
+Three things about this are worth pointing out in the demo:
+
+- **The eight tables are listed in `server.js`, not taken from the URL.** `/api/tables/:key`
+  looks the key up in a fixed object, so `PasswordReset` is unreachable and `/api/tables/pg_shadow`
+  returns 404. `Users.PasswordHash` is not in the `SELECT` list at all.
+- **Filter values are bound as query parameters**, never pasted into the SQL. Only the column
+  labels come from the file. Putting `'; DROP TABLE loan; --` in a search box returns 0 rows
+  and leaves the table alone.
+- **It is technician-only**, like the reports, because `Users`, `Loan` and `Fine` show every
+  student's details.
+
 ## Notes for the demo
 
 - **Seed dates are relative to today.** Loans are inserted as `CURRENT_DATE - 20` and so on,
