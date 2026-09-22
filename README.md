@@ -207,7 +207,6 @@ Each table has the filters that are actually useful for it:
 | `Reservation` | status, pickup from/to, search |
 | `Fine` | settled (Paid / Unpaid), issued from/to, search |
 | `Maintenance` | technician, date from/to, search |
-| `Users` | role, registered from/to, search |
 | `AssetCategory`, `Room` | search |
 
 A filter left blank is left out of the `WHERE` clause entirely, so clearing everything gives
@@ -217,14 +216,16 @@ disagree.
 
 Three things about this are worth pointing out in the demo:
 
-- **The eight tables are listed in `server.js`, not taken from the URL.** `/api/tables/:key`
+- **The seven tables are listed in `server.js`, not taken from the URL.** `/api/tables/:key`
   looks the key up in a fixed object, so `PasswordReset` is unreachable and `/api/tables/pg_shadow`
-  returns 404. `Users.PasswordHash` is not in the `SELECT` list at all.
+  returns 404. `Users` is not in the list either - a technician has no reason to page through
+  every student's email and phone number. The details they do need for chasing an overdue item
+  are on the Overdue Loans table instead.
 - **Filter values are bound as query parameters**, never pasted into the SQL. Only the column
   labels come from the file. Putting `'; DROP TABLE loan; --` in a search box returns 0 rows
   and leaves the table alone.
-- **It is technician-only**, like the reports, because `Users`, `Loan` and `Fine` show every
-  student's details.
+- **It is technician-only**, like the reports, because `Loan`, `Fine` and `Reservation` all
+  show other students' names and numbers.
 
 ## Notes for the demo
 

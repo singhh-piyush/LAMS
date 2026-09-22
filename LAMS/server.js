@@ -1110,9 +1110,10 @@ app.get('/api/reports/:key', requireTechnician, async (req, res) => {
 // the underlying tables and narrow them down, most usefully by date.
 //
 // Every table is described here rather than taking a table name from the URL.
-// That keeps the list to these eight, so PasswordReset - and Users.PasswordHash
-// - can never be reached through it. Filter values are always bound as query
-// parameters; only the column labels come from this file.
+// That keeps the list to these seven, so neither PasswordReset nor Users can be
+// reached through it - a technician has no reason to page through everyone's
+// contact details. Filter values are always bound as query parameters; only the
+// column labels come from this file.
 // ============================================================================
 
 // Options that the schema already fixes with a CHECK constraint.
@@ -1288,35 +1289,6 @@ JOIN Asset a ON m.AssetID = a.AssetID`,
               where: '(m.ServiceType ILIKE $$ OR a.AssetName ILIKE $$ OR a.SerialNumber ILIKE $$)' }
         ],
         orderBy: 'm.MaintenanceDate DESC, m.MaintenanceID DESC'
-    },
-
-    users: {
-        label: 'Users',
-        title: 'Users',
-        // PasswordHash is deliberately not selected.
-        select: `SELECT u.UserID    AS "ID",
-       u.StudentNumber   AS "Student Number",
-       u.FirstName || ' ' || u.LastName AS "Name",
-       u.Email           AS "Email",
-       u.PhoneNumber     AS "Contact",
-       u.UserType        AS "Role",
-       u.CreatedDate::date AS "Registered",
-       CASE WHEN u.IsActive THEN 'Yes' ELSE 'No' END AS "Active"
-FROM Users u`,
-        filters: [
-            { key: 'role', label: 'Role',            type: 'select',
-              options: ['Student', 'Technician', 'Admin'],
-              where: 'u.UserType = $$' },
-            { key: 'from', label: 'Registered from', type: 'date',
-              where: 'u.CreatedDate::date >= $$::date' },
-            { key: 'to',   label: 'Registered to',   type: 'date',
-              where: 'u.CreatedDate::date <= $$::date' },
-            { key: 'q',    label: 'Search',          type: 'search',
-              placeholder: 'Name, number or email',
-              where: `(u.StudentNumber ILIKE $$ OR u.FirstName ILIKE $$
-               OR u.LastName ILIKE $$ OR u.Email ILIKE $$)` }
-        ],
-        orderBy: 'u.UserType, u.LastName, u.FirstName'
     },
 
     assetcategory: {
