@@ -929,15 +929,30 @@ app.post('/api/technician/return', requireTechnician, async (req, res) => {
         // A late return raises a fine, inside the same transaction as the return
         // itself - so an item is never recorded as back without the fine that goes
         // with it. The wording matches the fines already in the database.
+        //
+        // Unless the loan has already been fined. A technician can raise a fine
+        // while the item is still out, which is what the seeded "item still out"
+        // fines are; adding another one on the way back would charge the student
+        // twice for the same lateness. One outstanding fine per loan.
         const daysLate = Number(loan.dayslate) || 0;
         let fine = 0;
+        let alreadyFined = false;
+
         if (daysLate > 0) {
-            fine = daysLate * FINE_PER_DAY;
-            await client.query(
-                `INSERT INTO fine (loanid, fineamount, finedate, reason, paid)
-                 VALUES ($1, $2, CURRENT_DATE, $3, FALSE)`,
-                [loan.loanid, fine, `Late return - ${daysLate} days`]
+            const existing = await client.query(
+                'SELECT 1 FROM fine WHERE loanid = $1 AND paid = FALSE LIMIT 1',
+                [loan.loanid]
             );
+            alreadyFined = existing.rows.length > 0;
+
+            if (!alreadyFined) {
+                fine = daysLate * FINE_PER_DAY;
+                await client.query(
+                    `INSERT INTO fine (loanid, fineamount, finedate, reason, paid)
+                     VALUES ($1, $2, CURRENT_DATE, $3, FALSE)`,
+                    [loan.loanid, fine, `Late return - ${daysLate} days`]
+                );
+            }
         }
 
         await client.query('COMMIT');
@@ -945,9 +960,10 @@ app.post('/api/technician/return', requireTechnician, async (req, res) => {
         res.json({
             success: true,
             message: `${loan.assetname} returned` +
-                     (daysLate > 0
-                        ? ` (${daysLate} day(s) late - R ${fine.toFixed(2)} fine raised)`
-                        : ''),
+                     (daysLate === 0 ? '' :
+                      alreadyFined
+                        ? ` (${daysLate} day(s) late - already fined)`
+                        : ` (${daysLate} day(s) late - R ${fine.toFixed(2)} fine raised)`),
             daysLate,
             fine
         });

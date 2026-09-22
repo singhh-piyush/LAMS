@@ -155,6 +155,11 @@ returned 9 days late  ->  fine of R45.00, reason "Late return - 9 days"
 returned on time      ->  no fine row at all
 ```
 
+**A loan is only fined once.** A technician can raise a fine while an item is still out —
+that is what the seeded "Overdue return - item still out" fines are — so if the loan already
+has an unpaid fine, returning it does not add a second one for the same lateness. The message
+says *"13 day(s) late - already fined"* instead.
+
 The technician settles a fine from **Browse Tables → Fines**, which is the only table in that
 tab with a button on its rows. **Settle** marks it paid and stamps today's date. The update
 carries the "not already paid" test in its `WHERE` clause, so two technicians clicking at the
