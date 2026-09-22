@@ -1,282 +1,297 @@
+// LAMS front end
+// Plain JavaScript, no framework. Talks to the Express API in server.js.
+
+const API_BASE = '/api';
 let currentUser = null;
 
-const API_BASE = 'http://localhost:3000/api';
+// Every fetch sends the session cookie, which is how the server knows who we are.
+function api(path, options) {
+    return fetch(API_BASE + path, Object.assign({ credentials: 'same-origin' }, options || {}));
+}
 
-
-// LOGIN
-
-function loginUser(studentNumber, password, userType) {
-    fetch(`${API_BASE}/login`, {
-        method: 'POST',
+function apiJson(path, method, body) {
+    return api(path, {
+        method: method,
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ studentNumber, password, userType })
-    })
-    .then(res => res.json())
-    .then(data => {
-        if (data.success) {
-            currentUser = {
-                userId: data.userId,
-                name: data.name,
-                role: data.role
-            };
-            
-            document.getElementById('loginPage').style.display = 'none';
-            document.getElementById('mainApp').style.display = 'block';
-            document.getElementById('userName').textContent = data.name;
-            
-            const badge = document.getElementById('userTypeBadge');
-            if (data.role === 'student') {
-                badge.textContent = 'STUDENT';
-                badge.style.backgroundColor = '#2563eb';
+        body: JSON.stringify(body)
+    }).then(res => res.json());
+}
+
+// Values from the database go into innerHTML, so escape them first.
+function esc(value) {
+    if (value === null || value === undefined) return '';
+    return String(value)
+        .replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
+        .replace(/"/g, '&quot;').replace(/'/g, '&#39;');
+}
+
+function money(value) {
+    return 'R ' + (Number(value) || 0).toFixed(2);
+}
+
+function shortDate(value) {
+    return value ? new Date(value).toLocaleDateString() : 'N/A';
+}
+
+// A CSS-safe version of a status or condition, e.g. "Needs Repair" -> "needs-repair"
+function badgeClass(value) {
+    return String(value || '').toLowerCase().replace(/\s+/g, '-');
+}
+
+// ===========================================================================
+// LOGIN / LOGOUT
+// ===========================================================================
+
+function loginUser(studentNumber, password) {
+    apiJson('/login', 'POST', { studentNumber: studentNumber, password: password })
+        .then(data => {
+            if (data.success) {
+                startSession(data);
             } else {
-                badge.textContent = 'TECHNICIAN';
-                badge.style.backgroundColor = '#dc2626';
+                document.getElementById('errorMessage').textContent = data.message || 'Login failed';
             }
-            
-            setupNavigation(data.role);
-            loadDashboardData(data.role);
-        } else {
-            document.getElementById('errorMessage').innerHTML = '❌ ' + (data.message || 'Login failed');
-        }
-    })
-    .catch(err => {
-        console.error('Login error:', err);
-        document.getElementById('errorMessage').innerHTML = '❌ Connection error';
+        })
+        .catch(() => {
+            document.getElementById('errorMessage').textContent =
+                'Cannot reach the server. Is it running on port 3000?';
+        });
+}
+
+function startSession(user) {
+    currentUser = user;
+
+    document.getElementById('loginPage').style.display = 'none';
+    document.getElementById('mainApp').style.display = 'block';
+    document.getElementById('userName').textContent = user.name;
+
+    const badge = document.getElementById('userTypeBadge');
+    badge.textContent = user.role === 'student' ? 'STUDENT' : 'TECHNICIAN';
+    badge.className = 'user-badge ' + user.role;
+
+    loadFilters();
+    setupNavigation(user.role);
+}
+
+function logout() {
+    apiJson('/logout', 'POST', {}).finally(() => {
+        currentUser = null;
+        document.getElementById('mainApp').style.display = 'none';
+        document.getElementById('loginPage').style.display = 'block';
+        document.getElementById('studentNumber').value = '';
+        document.getElementById('password').value = '';
+        document.getElementById('errorMessage').textContent = '';
     });
 }
 
+// ===========================================================================
+// NAVIGATION
+// ===========================================================================
 
-// NAVIGATION SETUP (Role-based tabs)
+const ALL_SECTIONS = ['studentDashboard', 'browseAssets', 'technicianDashboard',
+                      'checkoutReturn', 'inventoryMgmt', 'reports'];
 
 function setupNavigation(role) {
     const navTabs = document.getElementById('navTabs');
     navTabs.innerHTML = '';
-    
-    const tabs = role === 'student' 
+
+    const tabs = role === 'student'
         ? [
-            { id: 'browseAssets', label: 'Browse Assets' },
-            { id: 'inventoryMgmt', label: 'Inventory' },
-            { id: 'reports', label: 'Reports' }
+            { id: 'studentDashboard', label: 'My Dashboard' },
+            { id: 'browseAssets',     label: 'Browse Assets' },
+            { id: 'inventoryMgmt',    label: 'Inventory' },
+            { id: 'reports',          label: 'Reports' }
           ]
         : [
             { id: 'technicianDashboard', label: 'Technician Dashboard' },
-            { id: 'checkoutReturn', label: 'Checkout/Return' },
-            { id: 'inventoryMgmt', label: 'Inventory' },
-            { id: 'reports', label: 'Reports' }
+            { id: 'checkoutReturn',      label: 'Checkout / Return' },
+            { id: 'inventoryMgmt',       label: 'Inventory' },
+            { id: 'reports',             label: 'Reports' }
           ];
-    
+
     tabs.forEach((tab, index) => {
         const btn = document.createElement('button');
         btn.className = 'nav-btn' + (index === 0 ? ' active' : '');
         btn.textContent = tab.label;
-        btn.onclick = () => switchTab(tab.id, role);
+        btn.onclick = () => switchTab(tab.id, btn);
         navTabs.appendChild(btn);
     });
-    
-    // Hide all sections except first
-    document.getElementById('studentDashboard').style.display = 'none';
-    tabs.forEach(tab => {
-        document.getElementById(tab.id).style.display = index === 0 ? 'block' : 'none';
-    });
+
+    // Show the first tab for this role.
+    switchTab(tabs[0].id, navTabs.firstChild);
 }
 
-
-// TAB SWITCHING
-
-function switchTab(tabId, role) {
-    const sections = ['studentDashboard', 'browseAssets', 'technicianDashboard', 'checkoutReturn', 'inventoryMgmt', 'reports'];
-    
-    sections.forEach(sec => {
-        document.getElementById(sec).style.display = 'none';
+function switchTab(tabId, button) {
+    ALL_SECTIONS.forEach(id => {
+        const el = document.getElementById(id);
+        if (el) el.style.display = 'none';
     });
-    
     document.getElementById(tabId).style.display = 'block';
-    
-    // Update active button
-    document.querySelectorAll('.nav-btn').forEach(btn => btn.classList.remove('active'));
-    event.target.classList.add('active');
-    
-    // Load data for this tab
-    if (tabId === 'browseAssets') {
-        loadAvailableAssets();
-    } else if (tabId === 'technicianDashboard') {
-        loadTechnicianDashboard();
-    } else if (tabId === 'inventoryMgmt') {
-        loadInventory();
-    } else if (tabId === 'reports') {
-        loadUtilizationReport();
-    }
+
+    document.querySelectorAll('.nav-btn').forEach(b => b.classList.remove('active'));
+    if (button) button.classList.add('active');
+
+    if (tabId === 'studentDashboard')          loadStudentDashboard();
+    else if (tabId === 'browseAssets')         loadAvailableAssets();
+    else if (tabId === 'technicianDashboard')  loadTechnicianDashboard();
+    else if (tabId === 'inventoryMgmt')        loadInventory();
+    else if (tabId === 'reports')              loadUtilizationReport();
 }
 
-
-// LOAD DASHBOARD DATA
-
-function loadDashboardData(role) {
-    if (role === 'student') {
-        loadStudentDashboard();
-    } else {
-        loadTechnicianDashboard();
-    }
+function emptyRow(tbody, columns, message) {
+    tbody.innerHTML = '<tr><td colspan="' + columns +
+        '" style="text-align:center;color:#999;">' + message + '</td></tr>';
 }
 
-/
-// STUDENT DASHBOARD (Shows their actual loans & fines from database)
+// ===========================================================================
+// STUDENT DASHBOARD
+// ===========================================================================
 
 function loadStudentDashboard() {
-    // Pass userId to get personalized data
-    fetch(`${API_BASE}/student/dashboard/${currentUser.userId}`)
+    api('/student/dashboard')
         .then(res => res.json())
         .then(data => {
-            // Update dashboard cards
             document.getElementById('activeLoanCount').textContent = data.activeLoans || 0;
-            document.getElementById('fineAmount').textContent = 'R ' + (data.fines || 0).toFixed(2);
+            document.getElementById('fineAmount').textContent = money(data.fines);
             document.getElementById('reservationCount').textContent = data.reservations || 0;
             document.getElementById('totalBorrowedCount').textContent = data.totalBorrowed || 0;
-            
-            // Populate active loans table with REAL data
+
             const tbody = document.getElementById('studentLoansTable');
             tbody.innerHTML = '';
-            
-            if (data.activeLoansList && data.activeLoansList.length > 0) {
-                data.activeLoansList.forEach(loan => {
-                    const row = document.createElement('tr');
-                    const dueDate = new Date(loan.duedate);
-                    const today = new Date();
-                    const isOverdue = dueDate < today;
-                    
-                    const overdueStatus = isOverdue 
-                        ? '<span style="color: red; font-weight: bold;">Overdue</span>' 
-                        : '<span style="color: green;">On Time</span>';
-                    
-                    const fineText = loan.fineamount > 0 
-                        ? ` (Fine: R${loan.fineamount.toFixed(2)})` 
-                        : '';
-                    
-                    row.innerHTML = `
-                        <td>${loan.assetname}</td>
-                        <td>${loan.serialnumber}</td>
-                        <td>${new Date(loan.checkoutdate).toLocaleDateString()}</td>
-                        <td>${dueDate.toLocaleDateString()}${fineText}</td>
-                        <td>${overdueStatus}</td>
-                    `;
-                    tbody.appendChild(row);
-                });
-            } else {
-                tbody.innerHTML = '<tr><td colspan="5" style="text-align: center; color: #999;">No active loans</td></tr>';
+
+            if (!data.activeLoansList || data.activeLoansList.length === 0) {
+                return emptyRow(tbody, 5, 'No active loans');
             }
+
+            data.activeLoansList.forEach(loan => {
+                const due = new Date(loan.duedate);
+                const overdue = due < new Date();
+                const fine = Number(loan.fineamount) || 0;
+
+                const row = document.createElement('tr');
+                row.innerHTML =
+                    '<td>' + esc(loan.assetname) + '</td>' +
+                    '<td>' + esc(loan.serialnumber) + '</td>' +
+                    '<td>' + shortDate(loan.checkoutdate) + '</td>' +
+                    '<td>' + shortDate(loan.duedate) +
+                        (fine > 0 ? ' <small>(Fine: ' + money(fine) + ')</small>' : '') + '</td>' +
+                    '<td>' + (overdue
+                        ? '<span class="status-badge overdue">Overdue</span>'
+                        : '<span class="status-badge available">On Time</span>') + '</td>';
+                tbody.appendChild(row);
+            });
         })
-        .catch(err => console.error('Dashboard error:', err));
+        .catch(err => console.error('Student dashboard error:', err));
 }
 
-
+// ===========================================================================
 // TECHNICIAN DASHBOARD
+// ===========================================================================
 
 function loadTechnicianDashboard() {
-    fetch(`${API_BASE}/technician/dashboard`)
+    api('/technician/dashboard')
         .then(res => res.json())
         .then(data => {
             document.getElementById('totalAssetsCount').textContent = data.totalAssets || 0;
             document.getElementById('availableCount').textContent = data.availableCount || 0;
             document.getElementById('checkedOutCount').textContent = data.checkedOutCount || 0;
             document.getElementById('overdueCount').textContent = data.overdueCount || 0;
-            
-            // Populate checked out table
+
             const tbody = document.getElementById('checkedOutTable');
             tbody.innerHTML = '';
-            
-            if (data.checkedOutDetails && data.checkedOutDetails.length > 0) {
-                data.checkedOutDetails.forEach(item => {
-                    const row = document.createElement('tr');
-                    const dueStatus = item.duestatus === 'Overdue' ? '<span style="color: red; font-weight: bold;">Overdue</span>' : 'Active';
-                    row.innerHTML = `
-                        <td>${item.assetname}</td>
-                        <td>${item.serialnumber}</td>
-                        <td>${item.studentnumber}</td>
-                        <td>${item.checkedoutto}</td>
-                        <td>${new Date(item.checkoutdate).toLocaleDateString()}</td>
-                        <td>${new Date(item.duedate).toLocaleDateString()}</td>
-                        <td>${dueStatus}</td>
-                        <td>
-                            <button type="button" class="action-btn btn-return" onclick="confirmReturn(${item.loanid})">Return</button>
-                        </td>
-                    `;
-                    tbody.appendChild(row);
-                });
-            } else {
-                tbody.innerHTML = '<tr><td colspan="8" style="text-align: center; color: #999;">No checked out assets</td></tr>';
+
+            if (!data.checkedOutDetails || data.checkedOutDetails.length === 0) {
+                return emptyRow(tbody, 8, 'Nothing is currently on loan');
             }
+
+            data.checkedOutDetails.forEach(item => {
+                const row = document.createElement('tr');
+                row.innerHTML =
+                    '<td>' + esc(item.assetname) + '</td>' +
+                    '<td>' + esc(item.serialnumber) + '</td>' +
+                    '<td>' + esc(item.studentnumber) + '</td>' +
+                    '<td>' + esc(item.checkedoutto) + '</td>' +
+                    '<td>' + shortDate(item.checkoutdate) + '</td>' +
+                    '<td>' + shortDate(item.duedate) + '</td>' +
+                    '<td>' + (item.duestatus === 'Overdue'
+                        ? '<span class="status-badge overdue">Overdue</span>'
+                        : '<span class="status-badge available">Active</span>') + '</td>' +
+                    '<td><button type="button" class="action-btn btn-return" ' +
+                        'onclick="confirmReturn(' + item.loanid + ')">Return</button></td>';
+                tbody.appendChild(row);
+            });
         })
-        .catch(err => console.error('Tech dashboard error:', err));
-    
-    // Load overdue items
-    fetch(`${API_BASE}/overdue`)
+        .catch(err => console.error('Technician dashboard error:', err));
+
+    api('/overdue')
         .then(res => res.json())
         .then(data => {
             const tbody = document.getElementById('overdueTable');
             tbody.innerHTML = '';
-            
-            if (data && data.length > 0) {
-                data.forEach(item => {
-                    const row = document.createElement('tr');
-                    row.innerHTML = `
-                        <td>${item.loanid}</td>
-                        <td>${item.studentnumber}</td>
-                        <td>${item.studentname}</td>
-                        <td>${item.assetname}</td>
-                        <td>${new Date(item.duedate).toLocaleDateString()}</td>
-                        <td>R ${item.fineamount || 0}</td>
-                    `;
-                    tbody.appendChild(row);
-                });
-            } else {
-                tbody.innerHTML = '<tr><td colspan="6" style="text-align: center; color: #999;">No overdue loans</td></tr>';
+
+            if (!Array.isArray(data) || data.length === 0) {
+                return emptyRow(tbody, 7, 'Nothing overdue');
             }
+
+            data.forEach(item => {
+                const row = document.createElement('tr');
+                row.innerHTML =
+                    '<td>' + esc(item.loanid) + '</td>' +
+                    '<td>' + esc(item.studentnumber) + '</td>' +
+                    '<td>' + esc(item.studentname) + '</td>' +
+                    '<td>' + esc(item.phonenumber) + '</td>' +
+                    '<td>' + esc(item.assetname) + '</td>' +
+                    '<td>' + shortDate(item.duedate) +
+                        ' <small>(' + esc(item.daysoverdue) + ' days)</small></td>' +
+                    '<td>' + money(item.fineamount) + '</td>';
+                tbody.appendChild(row);
+            });
         })
         .catch(err => console.error('Overdue error:', err));
 }
 
-
-// BROWSE AVAILABLE ASSETS (Student view)
+// ===========================================================================
+// BROWSE ASSETS
+// ===========================================================================
 
 function loadAvailableAssets() {
     searchAssets();
 }
 
 function searchAssets() {
-    const search = document.getElementById('searchInput').value;
+    const search   = document.getElementById('searchInput').value;
     const category = document.getElementById('categoryFilter').value;
-    const room = document.getElementById('roomFilter').value;
-    
-    let url = `${API_BASE}/assets/available?`;
-    if (search) url += `search=${encodeURIComponent(search)}&`;
-    if (category) url += `category=${encodeURIComponent(category)}&`;
-    if (room) url += `room=${encodeURIComponent(room)}&`;
-    
-    fetch(url)
+    const room     = document.getElementById('roomFilter').value;
+
+    const params = new URLSearchParams();
+    if (search)   params.set('search', search);
+    if (category) params.set('category', category);
+    if (room)     params.set('room', room);
+
+    api('/assets/available?' + params.toString())
         .then(res => res.json())
         .then(data => {
             const tbody = document.getElementById('assetsTable');
             tbody.innerHTML = '';
-            
-            if (data && data.length > 0) {
-                data.forEach(asset => {
-                    const row = document.createElement('tr');
-                    row.innerHTML = `
-                        <td>${asset.assetname}</td>
-                        <td>${asset.categoryname || 'N/A'}</td>
-                        <td>${asset.serialnumber}</td>
-                        <td>${asset.roomname || 'N/A'}</td>
-                        <td><span class="condition-badge ${asset.condition.toLowerCase()}">${asset.condition}</span></td>
-                        <td><span class="status-badge available">${asset.status}</span></td>
-                        <td>
-                            <button type="button" class="action-btn btn-reserve" onclick="openReservation(${asset.assetid})">Reserve</button>
-                        </td>
-                    `;
-                    tbody.appendChild(row);
-                });
-            } else {
-                tbody.innerHTML = '<tr><td colspan="7" style="text-align: center; color: #999;">No assets found</td></tr>';
+
+            if (!Array.isArray(data) || data.length === 0) {
+                return emptyRow(tbody, 7, 'No available assets match that search');
             }
+
+            data.forEach(asset => {
+                const row = document.createElement('tr');
+                row.innerHTML =
+                    '<td>' + esc(asset.assetname) + '</td>' +
+                    '<td>' + esc(asset.categoryname) + '</td>' +
+                    '<td>' + esc(asset.serialnumber) + '</td>' +
+                    '<td>' + esc(asset.roomname) + '</td>' +
+                    '<td><span class="condition-badge ' + badgeClass(asset.condition) + '">' +
+                        esc(asset.condition) + '</span></td>' +
+                    '<td><span class="status-badge ' + badgeClass(asset.status) + '">' +
+                        esc(asset.status) + '</span></td>' +
+                    '<td><button type="button" class="action-btn btn-reserve" ' +
+                        'onclick="openReservation(' + asset.assetid + ')">Reserve</button></td>';
+                tbody.appendChild(row);
+            });
         })
         .catch(err => console.error('Assets error:', err));
 }
@@ -289,111 +304,95 @@ function resetFilters() {
 }
 
 function loadFilters() {
-    // Load categories
-    fetch(`${API_BASE}/categories`)
-        .then(res => res.json())
-        .then(data => {
-            const select = document.getElementById('categoryFilter');
-            data.forEach(cat => {
-                const opt = document.createElement('option');
-                opt.value = cat;
-                opt.textContent = cat;
-                select.appendChild(opt);
-            });
-        })
-        .catch(err => console.error('Categories error:', err));
-    
-    // Load rooms
-    fetch(`${API_BASE}/rooms`)
-        .then(res => res.json())
-        .then(data => {
-            const select = document.getElementById('roomFilter');
-            data.forEach(room => {
-                const opt = document.createElement('option');
-                opt.value = room;
-                opt.textContent = room;
-                select.appendChild(opt);
-            });
-        })
-        .catch(err => console.error('Rooms error:', err));
+    api('/categories').then(res => res.json()).then(data => {
+        fillSelect('categoryFilter', data, 'All Categories');
+    }).catch(err => console.error('Categories error:', err));
+
+    api('/rooms').then(res => res.json()).then(data => {
+        fillSelect('roomFilter', data, 'All Labs');
+    }).catch(err => console.error('Rooms error:', err));
 }
 
+function fillSelect(id, values, placeholder) {
+    const select = document.getElementById(id);
+    select.innerHTML = '<option value="">' + placeholder + '</option>';
+    (values || []).forEach(value => {
+        const opt = document.createElement('option');
+        opt.value = value;
+        opt.textContent = value;
+        select.appendChild(opt);
+    });
+}
 
-// INVENTORY MANAGEMENT
+// ===========================================================================
+// INVENTORY
+// ===========================================================================
 
 function loadInventory() {
-    fetch(`${API_BASE}/inventory`)
+    api('/inventory')
         .then(res => res.json())
         .then(data => {
             const tbody = document.getElementById('inventoryTable');
             tbody.innerHTML = '';
-            
-            if (data && data.length > 0) {
-                data.forEach(item => {
-                    const row = document.createElement('tr');
-                    const checkedOutTo = item.checkedoutto || 'N/A';
-                    const checkoutDate = item.checkoutdate ? new Date(item.checkoutdate).toLocaleDateString() : 'N/A';
-                    const dueDate = item.duedate ? new Date(item.duedate).toLocaleDateString() : 'N/A';
-                    
-                    row.innerHTML = `
-                        <td>${item.assetname}</td>
-                        <td>${item.categoryname || 'N/A'}</td>
-                        <td>${item.serialnumber}</td>
-                        <td>${item.roomname || 'N/A'}</td>
-                        <td><span class="condition-badge ${item.condition.toLowerCase()}">${item.condition}</span></td>
-                        <td><span class="status-badge ${item.status.toLowerCase().replace(' ', '-')}">${item.status}</span></td>
-                        <td>${checkedOutTo}</td>
-                        <td>${checkoutDate}</td>
-                        <td>${dueDate}</td>
-                        <td>
-                            <button type="button" class="action-btn btn-small" onclick="editAsset(${item.assetid})">Edit</button>
-                        </td>
-                    `;
-                    tbody.appendChild(row);
-                });
-            } else {
-                tbody.innerHTML = '<tr><td colspan="10" style="text-align: center; color: #999;">No assets in inventory</td></tr>';
+
+            if (!Array.isArray(data) || data.length === 0) {
+                return emptyRow(tbody, 9, 'No assets in inventory');
             }
+
+            data.forEach(item => {
+                const row = document.createElement('tr');
+                row.innerHTML =
+                    '<td>' + esc(item.assetname) + '</td>' +
+                    '<td>' + esc(item.categoryname) + '</td>' +
+                    '<td>' + esc(item.serialnumber) + '</td>' +
+                    '<td>' + esc(item.roomname) + '</td>' +
+                    '<td><span class="condition-badge ' + badgeClass(item.condition) + '">' +
+                        esc(item.condition) + '</span></td>' +
+                    '<td><span class="status-badge ' + badgeClass(item.status) + '">' +
+                        esc(item.status) + '</span></td>' +
+                    '<td>' + (item.checkedoutto ? esc(item.checkedoutto) : '-') + '</td>' +
+                    '<td>' + shortDate(item.checkoutdate) + '</td>' +
+                    '<td>' + shortDate(item.duedate) + '</td>';
+                tbody.appendChild(row);
+            });
         })
         .catch(err => console.error('Inventory error:', err));
 }
 
-
-// UTILIZATION REPORTS
+// ===========================================================================
+// REPORTS
+// ===========================================================================
 
 function loadUtilizationReport() {
-    fetch(`${API_BASE}/reports/utilization`)
+    api('/reports/utilization')
         .then(res => res.json())
         .then(data => {
             const tbody = document.getElementById('utilizationTable');
             tbody.innerHTML = '';
-            
-            if (data && data.length > 0) {
-                data.forEach(item => {
-                    const row = document.createElement('tr');
-                    const lastBorrowed = item.lastborrowed 
-                        ? new Date(item.lastborrowed).toLocaleDateString() 
-                        : 'Never';
-                    
-                    row.innerHTML = `
-                        <td>${item.assetname}</td>
-                        <td>${item.categoryname || 'N/A'}</td>
-                        <td>${item.roomname || 'N/A'}</td>
-                        <td>${item.timesborrowed}</td>
-                        <td>${lastBorrowed}</td>
-                        <td>${item.timesborrowed > 0 ? Math.round(item.timesborrowed / 7) + ' weeks avg' : 'N/A'}</td>
-                    `;
-                    tbody.appendChild(row);
-                });
-            } else {
-                tbody.innerHTML = '<tr><td colspan="6" style="text-align: center; color: #999;">No utilization data</td></tr>';
+
+            if (!Array.isArray(data) || data.length === 0) {
+                return emptyRow(tbody, 5, 'No utilisation data');
             }
+
+            data.forEach(item => {
+                const times = Number(item.timesborrowed) || 0;
+                const row = document.createElement('tr');
+                row.innerHTML =
+                    '<td>' + esc(item.assetname) + '</td>' +
+                    '<td>' + esc(item.categoryname) + '</td>' +
+                    '<td>' + esc(item.roomname) + '</td>' +
+                    '<td>' + times + '</td>' +
+                    '<td>' + (item.lastborrowed ? shortDate(item.lastborrowed)
+                        : '<em>Never borrowed</em>') + '</td>';
+                tbody.appendChild(row);
+            });
         })
         .catch(err => console.error('Reports error:', err));
 }
 
-
+// ===========================================================================
 // RESERVATION
+// ===========================================================================
 
 let reservationAssetId = null;
 
@@ -409,168 +408,165 @@ function closeModal() {
 
 function submitReservation() {
     const pickupDate = document.getElementById('pickupDate').value;
-    
-    if (!pickupDate) {
-        alert('Please select a pickup date');
-        return;
-    }
-    
-    fetch(`${API_BASE}/reservation/create`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-            studentId: currentUser.userId,
-            assetId: reservationAssetId,
-            desiredPickupDate: pickupDate
+    if (!pickupDate) return showAlert('Please choose a pickup date', 'error');
+
+    // The server takes the student id from the session, not from here.
+    apiJson('/reservation/create', 'POST', {
+        assetId: reservationAssetId,
+        desiredPickupDate: pickupDate
+    })
+        .then(data => {
+            if (data.success) {
+                showAlert(data.message, 'success');
+                closeModal();
+                loadAvailableAssets();
+            } else {
+                showAlert(data.error || 'Reservation failed', 'error');
+            }
         })
-    })
-    .then(res => res.json())
-    .then(data => {
-        if (data.success) {
-            showAlert('✅ ' + data.message, 'success');
-            closeModal();
-            loadAvailableAssets();
-        } else {
-            showAlert('❌ ' + data.error, 'error');
-        }
-    })
-    .catch(err => {
-        console.error('Reservation error:', err);
-        showAlert('❌ Failed to create reservation', 'error');
-    });
+        .catch(() => showAlert('Reservation failed', 'error'));
 }
 
+// ===========================================================================
+// CHECKOUT / RETURN
+// ===========================================================================
 
-// CHECKOUT/RETURN (Technician)
+function onOperationChange() {
+    const operation = document.getElementById('operationType').value;
+    const checkout = operation === 'checkout';
 
-    function processTransaction() {
-    const studentNumber = document.getElementById('techStudentNumber').value.trim();
-    const assetSerial = document.getElementById('techAssetSerial').value.trim();
-    const operationType = document.getElementById('operationType').value;
-    
-    console.log('Checkout attempt - Student:', studentNumber, 'Asset:', assetSerial);
-    
-    if (!studentNumber || !assetSerial || !operationType) {
-        alert('Please fill in all fields');
-        return;
-    }
-    
-    if (operationType === 'checkout') {
-        fetch(`${API_BASE}/technician/checkout`, {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({
-                studentNumber,
-                assetSerial,
-                technicianId: currentUser.userId
+    document.getElementById('checkoutFields').style.display = checkout ? 'block' : 'none';
+    document.getElementById('returnFields').style.display   = checkout ? 'none' : 'block';
+}
+
+function processTransaction() {
+    const operation = document.getElementById('operationType').value;
+
+    if (operation === 'checkout') {
+        const studentNumber = document.getElementById('techStudentNumber').value.trim();
+        const assetSerial   = document.getElementById('techAssetSerial').value.trim();
+
+        if (!studentNumber || !assetSerial) {
+            return showAlert('Enter both a student number and an asset serial', 'error');
+        }
+
+        apiJson('/technician/checkout', 'POST', {
+            studentNumber: studentNumber, assetSerial: assetSerial
+        })
+            .then(data => {
+                if (data.success) {
+                    showAlert(data.message, 'success');
+                    document.getElementById('techStudentNumber').value = '';
+                    document.getElementById('techAssetSerial').value = '';
+                    loadTechnicianDashboard();
+                } else {
+                    showAlert(data.error, 'error');
+                }
             })
-        })
-        .then(res => res.json())
-        .then(data => {
-            if (data.success) {
-                showAlert('✅ ' + data.message, 'success');
-                document.getElementById('techStudentNumber').value = '';
-                document.getElementById('techAssetSerial').value = '';
-                loadTechnicianDashboard();
-            } else {
-                showAlert('❌ ' + data.error, 'error');
-            }
-        })
-        .catch(err => {
-            console.error('Checkout error:', err);
-            showAlert('❌ Checkout failed', 'error');
-        });
+            .catch(() => showAlert('Checkout failed', 'error'));
+
     } else {
-        const loanId = assetSerial;
-        fetch(`${API_BASE}/technician/return`, {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ loanId })
-        })
-        .then(res => res.json())
-        .then(data => {
-            if (data.success) {
-                showAlert('✅ ' + data.message, 'success');
-                document.getElementById('techStudentNumber').value = '';
-                document.getElementById('techAssetSerial').value = '';
-                loadTechnicianDashboard();
-            } else {
-                showAlert('❌ ' + data.error, 'error');
-            }
-        })
-        .catch(err => {
-            console.error('Return error:', err);
-            showAlert('❌ Return failed', 'error');
-        });
+        const loanId = document.getElementById('returnLoanId').value.trim();
+        const condition = document.getElementById('returnCondition').value;
+
+        if (!loanId) return showAlert('Enter the loan ID being returned', 'error');
+
+        sendReturn(loanId, condition);
     }
 }
 
 function confirmReturn(loanId) {
     if (confirm('Confirm return of this asset?')) {
-        fetch(`${API_BASE}/technician/return`, {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ loanId })
-        })
-        .then(res => res.json())
-        .then(data => {
-            if (data.success) {
-                showAlert('✅ Asset returned successfully', 'success');
-                loadTechnicianDashboard();
-            } else {
-                showAlert('❌ ' + data.error, 'error');
-            }
-        })
-        .catch(err => {
-            console.error('Return error:', err);
-            showAlert('❌ Return failed', 'error');
-        });
+        sendReturn(loanId, 'Good');
     }
 }
 
+function sendReturn(loanId, condition) {
+    apiJson('/technician/return', 'POST', { loanId: loanId, conditionOnReturn: condition })
+        .then(data => {
+            if (data.success) {
+                showAlert(data.message, 'success');
+                const field = document.getElementById('returnLoanId');
+                if (field) field.value = '';
+                loadTechnicianDashboard();
+            } else {
+                showAlert(data.error, 'error');
+            }
+        })
+        .catch(() => showAlert('Return failed', 'error'));
+}
 
+// ===========================================================================
+// FORGOT PASSWORD
+// ===========================================================================
+
+function openForgotPassword() {
+    document.getElementById('forgotModal').style.display = 'block';
+    document.getElementById('forgotMessage').textContent = '';
+}
+
+function closeForgotPassword() {
+    document.getElementById('forgotModal').style.display = 'none';
+    document.getElementById('forgotEmail').value = '';
+}
+
+function submitForgotPassword() {
+    const email = document.getElementById('forgotEmail').value.trim();
+    if (!email) {
+        document.getElementById('forgotMessage').textContent = 'Please enter your email address';
+        return;
+    }
+
+    apiJson('/forgot-password', 'POST', { email: email })
+        .then(data => {
+            document.getElementById('forgotMessage').textContent = data.message;
+            document.getElementById('forgotEmail').value = '';
+        })
+        .catch(() => {
+            document.getElementById('forgotMessage').textContent = 'Could not reach the server';
+        });
+}
+
+// ===========================================================================
 // UTILITIES
+// ===========================================================================
+
+// Show/hide toggle on a password box.
+function togglePassword(inputId, button) {
+    const input = document.getElementById(inputId);
+    const hidden = input.type === 'password';
+
+    input.type = hidden ? 'text' : 'password';
+    button.textContent = hidden ? 'Hide' : 'Show';
+    button.setAttribute('aria-label', hidden ? 'Hide password' : 'Show password');
+    input.focus();
+}
 
 function showAlert(message, type) {
     const alert = document.getElementById('appAlert');
     alert.textContent = message;
     alert.className = 'alert ' + type;
     alert.style.display = 'block';
-    
-    setTimeout(() => {
-        alert.style.display = 'none';
-    }, 4000);
+    setTimeout(() => { alert.style.display = 'none'; }, 4000);
 }
 
-function editAsset(assetId) {
-    alert('Edit feature coming soon');
-}
-
-function logout() {
-    currentUser = null;
-    document.getElementById('mainApp').style.display = 'none';
-    document.getElementById('loginPage').style.display = 'block';
-    document.getElementById('studentNumber').value = '';
-    document.getElementById('password').value = '';
-    document.getElementById('userType').value = '';
-    document.getElementById('errorMessage').innerHTML = '';
-}
-
-
-// INITIALIZE
+// ===========================================================================
+// STARTUP
+// ===========================================================================
 
 window.addEventListener('DOMContentLoaded', () => {
-    loadFilters();
-    
-    // Set min date for pickup to today
-    const today = new Date().toISOString().split('T')[0];
-    document.getElementById('pickupDate').setAttribute('min', today);
+    // Pickup date cannot be in the past.
+    const pickup = document.getElementById('pickupDate');
+    if (pickup) pickup.setAttribute('min', new Date().toISOString().split('T')[0]);
+
+    // If a session is still active (e.g. after a page refresh), go straight in.
+    api('/me')
+        .then(res => res.ok ? res.json() : null)
+        .then(user => { if (user) startSession(user); })
+        .catch(() => { /* not logged in - stay on the login page */ });
 });
 
-// Close modal when clicking outside
 window.onclick = (event) => {
-    const modal = document.getElementById('reservationModal');
-    if (event.target === modal) {
-        closeModal();
-    }
+    if (event.target === document.getElementById('reservationModal')) closeModal();
+    if (event.target === document.getElementById('forgotModal')) closeForgotPassword();
 };

@@ -1,0 +1,112 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Reset Password - LAMS</title>
+    <link rel="stylesheet" href="styles.css">
+</head>
+<body>
+
+<div id="loginPage">
+    <div class="login-container">
+        <h2>LAMS</h2>
+        <div class="login-subtitle">Choose a new password</div>
+
+        <div id="resetError" class="error-message"></div>
+        <div id="resetSuccess" class="info-message"></div>
+
+        <div id="resetForm" class="stack">
+            <div class="form-group">
+                <label for="newPassword">New Password</label>
+                <div class="password-wrap">
+                    <input type="password" id="newPassword" placeholder="At least 8 characters" autocomplete="new-password">
+                    <button type="button" class="toggle-pw" onclick="togglePassword('newPassword', this)"
+                            aria-label="Show password">Show</button>
+                </div>
+            </div>
+
+            <div class="form-group">
+                <label for="confirmPassword">Confirm New Password</label>
+                <div class="password-wrap">
+                    <input type="password" id="confirmPassword" placeholder="Type it again" autocomplete="new-password">
+                    <button type="button" class="toggle-pw" onclick="togglePassword('confirmPassword', this)"
+                            aria-label="Show password">Show</button>
+                </div>
+            </div>
+
+            <button type="button" class="login-btn" onclick="submitReset()">Update Password</button>
+        </div>
+
+        <div class="demo-info">
+            <a href="index.html">Back to login</a>
+        </div>
+    </div>
+</div>
+
+<script>
+const token = new URLSearchParams(window.location.search).get('token');
+
+if (!token) {
+    document.getElementById('resetError').textContent =
+        'This page needs a reset link. Request one from the login page.';
+    document.getElementById('resetForm').style.display = 'none';
+}
+
+// Show/hide toggle on a password box.
+function togglePassword(inputId, button) {
+    const input = document.getElementById(inputId);
+    const hidden = input.type === 'password';
+
+    input.type = hidden ? 'text' : 'password';
+    button.textContent = hidden ? 'Hide' : 'Show';
+    button.setAttribute('aria-label', hidden ? 'Hide password' : 'Show password');
+    input.focus();
+}
+
+function submitReset() {
+    const password = document.getElementById('newPassword').value;
+    const confirm  = document.getElementById('confirmPassword').value;
+    const error    = document.getElementById('resetError');
+    const success  = document.getElementById('resetSuccess');
+
+    error.textContent = '';
+    success.textContent = '';
+
+    if (password.length < 8) {
+        error.textContent = 'Password must be at least 8 characters';
+        return;
+    }
+    if (password !== confirm) {
+        error.textContent = 'The two passwords do not match';
+        return;
+    }
+
+    fetch('/api/reset-password', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        credentials: 'same-origin',
+        body: JSON.stringify({ token: token, password: password })
+    })
+        .then(res => res.json())
+        .then(data => {
+            if (data.success) {
+                document.getElementById('resetForm').style.display = 'none';
+                success.textContent = data.message + ' Redirecting to the login page...';
+                setTimeout(() => { window.location.href = 'index.html'; }, 2500);
+            } else {
+                error.textContent = data.message;
+            }
+        })
+        .catch(() => { error.textContent = 'Could not reach the server'; });
+}
+
+['newPassword', 'confirmPassword'].forEach(function (id) {
+    document.getElementById(id).addEventListener('keypress', function (e) {
+        if (e.key === 'Enter') submitReset();
+    });
+});
+</script>
+
+</body>
+</html>

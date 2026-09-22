@@ -56,6 +56,12 @@ body {
     border-left: 4px solid #c00;
 }
 
+/* Only show the box once there is actually a message in it. Without this the
+   rule above hides it permanently, so no error text ever reached the screen. */
+.error-message:not(:empty) {
+    display: block;
+}
+
 .form-group {
     margin-bottom: 15px;
 }
@@ -589,6 +595,143 @@ table tbody tr:last-child td {
 /* ============================================================================
    RESPONSIVE
    ============================================================================ */
+/* ============================================================================
+   BADGES - remaining values allowed by the database CHECK constraints
+   ============================================================================ */
+.condition-badge.new {
+    background: #dcfce7;
+    color: #166534;
+}
+
+.condition-badge.needs-repair {
+    background: #fee2e2;
+    color: #991b1b;
+}
+
+.condition-badge.decommissioned {
+    background: #d1d5db;
+    color: #374151;
+}
+
+.status-badge.overdue {
+    background: #fee2e2;
+    color: #991b1b;
+}
+
+.user-badge.student {
+    background: #2563eb;
+}
+
+.user-badge.technician {
+    background: #dc2626;
+}
+
+/* The generic ".content-section h3" rule below is defined later with the same
+   specificity, so it was winning and painting the dashboard card titles dark
+   blue on a dark blue card, with a dark underline. This puts them back. */
+.content-section .dashboard-card h3 {
+    color: #ffffff;
+    font-size: 14px;
+    font-weight: 600;
+    margin-bottom: 15px;
+    padding-bottom: 0;
+    border-bottom: none;
+    opacity: 0.9;
+    text-transform: uppercase;
+    letter-spacing: 1px;
+}
+
+/* ============================================================================
+   PASSWORD SHOW / HIDE
+   ============================================================================ */
+.password-wrap {
+    position: relative;
+}
+
+/* Leave room for the button so long passwords do not run underneath it */
+.password-wrap input {
+    padding-right: 70px;
+    width: 100%;
+}
+
+.toggle-pw {
+    position: absolute;
+    right: 8px;
+    top: 50%;
+    transform: translateY(-50%);
+    background: none;
+    border: none;
+    color: #1e3a8a;
+    font-size: 12px;
+    font-weight: 600;
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+    cursor: pointer;
+    padding: 6px 8px;
+    border-radius: 4px;
+}
+
+.toggle-pw:hover {
+    background: #eef2ff;
+    color: #2563eb;
+}
+
+/* ============================================================================
+   LAYOUT HELPERS
+   ============================================================================ */
+.stack {
+    display: flex;
+    flex-direction: column;
+    gap: 15px;
+}
+
+/* Lets wide tables scroll sideways on a phone instead of breaking the page */
+.table-wrap {
+    width: 100%;
+    overflow-x: auto;
+}
+
+.hint {
+    font-size: 13px;
+    color: #64748b;
+    margin: 4px 0 0;
+}
+
+.info-message {
+    color: #166534;
+    font-size: 14px;
+    line-height: 1.5;
+}
+
+.info-message:not(:empty) {
+    background: #dcfce7;
+    border-radius: 6px;
+    padding: 10px 12px;
+}
+
+.link-btn {
+    background: none;
+    border: none;
+    color: #1e3a8a;
+    font-size: 14px;
+    cursor: pointer;
+    text-decoration: underline;
+    padding: 0;
+}
+
+.link-btn:hover {
+    color: #2563eb;
+}
+
+.search-btn.secondary {
+    background: #e2e8f0;
+    color: #333;
+}
+
+.search-btn.secondary:hover {
+    background: #cbd5e1;
+}
+
 @media (max-width: 768px) {
     .header {
         flex-direction: column;
