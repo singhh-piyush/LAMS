@@ -270,7 +270,16 @@ app.post('/api/reset-password', async (req, res) => {
         );
 
         if (result.rows.length === 0) {
-            return res.json({ success: false, message: 'That reset link is invalid or has expired' });
+            // Three different things land here, and saying so saves a lot of
+            // confusion: the commonest by far is having pressed the button twice
+            // and then opened the first email, because a new request deletes the
+            // old link. The message stays vague about which account it was for.
+            return res.json({
+                success: false,
+                message: 'That reset link no longer works. It has either expired, been used ' +
+                         'already, or been replaced by a newer one - only the most recent ' +
+                         'link works. Request a new one and open the latest email.'
+            });
         }
 
         const userId = result.rows[0].userid;
