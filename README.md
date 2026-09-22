@@ -141,9 +141,9 @@ be left hanging as `Pending` after the item has gone out.
 
 ## Reports
 
-The **Reports** tab runs six queries straight against the database and **shows the SQL that
-produced each result** above the rows. This is the Data Management "demonstration of queries"
-deliverable, and it is technician-only because four of the six show other students' details.
+The **Reports** tab runs six queries straight against the database. This is the Data Management
+"demonstration of queries" deliverable, and it is technician-only because four of the six show
+other students' details. The SQL for each one is in `LAMS/server.js`, in the `REPORTS` object.
 
 1. All assets with their category and room — a three-table join
 2. Everything currently on loan, with who holds it and when it is due

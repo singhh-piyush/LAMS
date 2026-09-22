@@ -722,21 +722,6 @@ table tbody tr:last-child td {
     margin-bottom: 6px;
 }
 
-/* The SQL is on screen next to its results, so the query being demonstrated
-   is visible during the presentation. */
-.sql-block {
-    background: #0f172a;
-    color: #e2e8f0;
-    padding: 16px;
-    border-radius: 8px;
-    font-family: 'Consolas', 'Courier New', monospace;
-    font-size: 13px;
-    line-height: 1.5;
-    overflow-x: auto;
-    white-space: pre;
-    margin: 10px 0 15px;
-}
-
 /* ============================================================================
    TABLE ROW ACTIONS
    ============================================================================ */

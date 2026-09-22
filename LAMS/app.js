@@ -435,7 +435,6 @@ function runReport(key) {
 
             document.getElementById('reportTitle').textContent = data.title;
             document.getElementById('reportNote').textContent = data.note;
-            document.getElementById('reportSql').textContent = data.sql;
             document.getElementById('reportCount').textContent =
                 data.rowCount + (data.rowCount === 1 ? ' row returned' : ' rows returned');
 
@@ -468,15 +467,6 @@ function formatCell(value) {
         return shortDate(value);
     }
     return esc(value);
-}
-
-function toggleSql() {
-    const block = document.getElementById('reportSql');
-    const button = document.getElementById('sqlToggle');
-    const hidden = block.style.display === 'none';
-
-    block.style.display = hidden ? 'block' : 'none';
-    button.textContent = hidden ? 'Hide SQL' : 'Show SQL';
 }
 
 // ===========================================================================

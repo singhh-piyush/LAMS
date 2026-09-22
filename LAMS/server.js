@@ -752,10 +752,7 @@ app.get('/api/technician/dashboard', requireTechnician, async (req, res) => {
 // ============================================================================
 // REPORTS
 //
-// The six queries the Data Management module asks us to demonstrate. Each one
-// is stored with the SQL that produces it, and the SQL is sent to the browser
-// and shown above the results, so the query being demonstrated is on screen
-// next to the rows it returned.
+// The six queries the Data Management module asks us to demonstrate.
 //
 // Technician only: four of the six show other students' names, loans or fines,
 // and the business rules say a student may only see their own.
@@ -872,7 +869,6 @@ app.get('/api/reports/:key', requireTechnician, async (req, res) => {
             key: req.params.key,
             title: report.title,
             note: report.note,
-            sql: report.sql,
             columns: result.fields.map(f => f.name),
             rows: result.rows,
             rowCount: result.rowCount
