@@ -1,0 +1,176 @@
+HOW TO RUN LAMS
+
+You received a folder called `LAMS`. Here's exactly what to do:
+
+---
+
+## ✅ STEP 1: Install Prerequisites
+
+### A. Install Node.js
+1. Go to: https://nodejs.org
+2. Download "LTS" version
+3. Run installer, click "Next" until done
+4. **Verify:** Open PowerShell, type:
+   ```
+   node --version
+   ```
+   Should show: `v18.x.x` or higher
+
+### B. Install PostgreSQL
+1. Go to: https://www.postgresql.org/download
+2. Download for Windows
+3. Run installer
+4. **Important: Remember the password you set!**
+5. After install, pgAdmin should open automatically
+
+---
+
+## 📂 STEP 2: Set Up Folder
+
+1. **Create folder:** `C:\LAMS\`
+2. **Extract the LAMS folder** 
+3. **Copy these files inside `C:\LAMS\`:**
+   - server.js
+   - app.js
+   - index.html
+   - styles.css
+   - package.json
+
+Your folder should look like:
+```
+C:\LAMS\
+├── server.js
+├── app.js
+├── index.html
+├── styles.css
+└── package.json
+```
+
+---
+
+## 🗄️ STEP 3: Create Database
+
+### A. Open pgAdmin
+1. Open browser: http://localhost:5050
+2. Login: 
+   - Username: `postgres`
+   - Password: **the one you set during PostgreSQL install**
+
+### B. Create Database
+1. Right-click "Databases"
+2. Click "Create" → "Database"
+3. Name: `lams_db`
+4. Click "Save"
+
+### C. Create Tables
+1. Right-click `lams_db` database
+2. Click "Query Tool"
+3. **Ask your friend for:** `lams_database_setup.sql` file
+4. Copy ALL content from that file
+5. Paste into Query Tool
+6. Click "Execute" (lightning bolt)
+7. Wait for results - should show:
+   ```
+   Users created: 8
+   Categories created: 8
+   Rooms created: 3
+   Assets created: 16
+   ```
+
+Done! Database is ready.
+
+---
+
+## 💾 STEP 4: Install Code Dependencies
+
+1. **Open PowerShell** in `C:\LAMS\`
+   - Easiest: Hold Shift + Right-click in folder → "Open PowerShell here"
+
+2. **Type this command:**
+   ```powershell
+   npm install
+   ```
+
+3. **Wait** (takes 2-5 minutes, downloads packages)
+
+4. **You'll see:** New `node_modules` folder created ✅
+
+---
+
+## 🚀 STEP 5: Start Server
+
+**In same PowerShell window, type:**
+```powershell
+node server.js
+```
+
+**You should see:**
+```
+✅ LAMS Server running on http://localhost:3000
+📊 Database: lams_db (PostgreSQL)
+```
+
+---
+
+## 🌐 STEP 6: Open in Browser
+
+1. **Open browser** (Chrome, Firefox, Edge)
+2. **Type:** `http://localhost:3000`
+3. **You should see:** LAMS Login Page ✅
+
+---
+
+## 👤 STEP 7: Login & Test
+
+**Login as Student:**
+- ID: `25116045`
+- Password: `anything`
+- Role: `Student`
+- Click "Login"
+
+**OR Login as Technician:**
+- ID: `TECH001`
+- Password: `anything`
+- Role: `Lab Technician`
+- Click "Login"
+
+✅ **You're in! LAMS is running!**
+
+---
+
+## ❌ TROUBLESHOOTING
+
+### "Cannot find module 'express'"
+- You didn't run `npm install`
+- Solution: Go to Step 4 above
+
+### "PostgreSQL connection error"
+- PostgreSQL not running
+- Solution: Start PostgreSQL (should auto-start)
+
+### "Database lams_db does not exist"
+- You didn't create the database
+- Solution: Go to Step 3 above
+
+### "relation 'user' does not exist"
+- You didn't run the SQL setup script
+- Solution: Go to Step 3C above
+
+### Server won't start
+- Another app using port 3000
+- Solution: 
+  ```powershell
+  # Press Ctrl+C to stop
+  # Try again
+  ```
+
+---
+
+## 🎯 THAT'S IT!
+
+Once you do these 7 steps, LAMS runs on your laptop!
+
+**To stop:** Press `Ctrl+C` in PowerShell
+
+**To start again:** `node server.js` in `C:\LAMS\`
+

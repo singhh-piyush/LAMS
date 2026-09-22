@@ -1,0 +1,314 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Laboratory Asset Management System (LAMS)</title>
+    <link rel="stylesheet" href="styles.css">
+</head>
+<body>
+
+<!-- LOGIN PAGE -->
+<div id="loginPage">
+    <div class="login-container">
+        <h2>LAMS</h2>
+        <div class="login-subtitle">Laboratory Asset Management System</div>
+        
+        <div id="errorMessage" class="error-message"></div>
+
+        <div id="loginForm" style="display: flex; flex-direction: column; gap: 15px;">
+            <div class="form-group">
+                <label for="studentNumber">Student/Technician Number</label>
+                <input type="text" id="studentNumber" required placeholder="Enter your ID">
+            </div>
+
+            <div class="form-group">
+                <label for="password">Password</label>
+                <input type="password" id="password" required placeholder="Enter your password">
+            </div>
+
+            <div class="form-group">
+                <label for="userType">User Type</label>
+                <select id="userType" required>
+                    <option value="">Select your role...</option>
+                    <option value="student">Student</option>
+                    <option value="technician">Lab Technician</option>
+                </select>
+            </div>
+
+            <button type="button" id="loginBtn" class="login-btn" onclick="handleLogin()">Login</button>
+        </div>
+
+        <div class="demo-info">
+            <strong>Demo Credentials:</strong><br>
+            📚 Student ID: <code>25116045</code><br>
+            🔧 Technician ID: <code>TECH001</code><br>
+            🔐 Password: <code>any password</code>
+        </div>
+    </div>
+</div>
+
+<!-- MAIN APP -->
+<div id="mainApp" style="display: none;">
+    <!-- HEADER -->
+    <div class="header">
+        <div>
+            <h1>LAMS</h1>
+        </div>
+        <div class="user-info">
+            <div>
+                Welcome, <strong id="userName"></strong>
+            </div>
+            <div class="user-badge" id="userTypeBadge"></div>
+            <button class="logout-btn" onclick="logout()">Logout</button>
+        </div>
+    </div>
+
+    <!-- CONTAINER -->
+    <div class="container">
+        <!-- NAVIGATION -->
+        <div class="nav-tabs" id="navTabs"></div>
+
+        <!-- ALERT -->
+        <div id="appAlert" class="alert"></div>
+
+        <!-- STUDENT DASHBOARD -->
+        <div id="studentDashboard" class="content-section">
+            <div class="dashboard-grid">
+                <div class="dashboard-card">
+                    <h3>Active Loans</h3>
+                    <div class="number" id="activeLoanCount">0</div>
+                </div>
+                <div class="dashboard-card">
+                    <h3>Outstanding Fines</h3>
+                    <div class="number" id="fineAmount">R 0.00</div>
+                </div>
+                <div class="dashboard-card">
+                    <h3>Reservations Made</h3>
+                    <div class="number" id="reservationCount">0</div>
+                </div>
+                <div class="dashboard-card">
+                    <h3>Total Borrowed</h3>
+                    <div class="number" id="totalBorrowedCount">0</div>
+                </div>
+            </div>
+
+            <h3>Your Active Loans</h3>
+            <table>
+                <thead>
+                    <tr>
+                        <th>Asset Name</th>
+                        <th>Serial Number</th>
+                        <th>Checkout Date</th>
+                        <th>Due Date</th>
+                        <th>Status</th>
+                    </tr>
+                </thead>
+                <tbody id="studentLoansTable"></tbody>
+            </table>
+        </div>
+
+        <!-- BROWSE ASSETS -->
+        <div id="browseAssets" class="content-section">
+            <div class="search-bar">
+                <input type="text" id="searchInput" placeholder="Search by asset name or serial number...">
+                <select id="categoryFilter">
+                    <option value="">All Categories</option>
+                </select>
+                <select id="roomFilter">
+                    <option value="">All Labs</option>
+                </select>
+                <button type="button" class="search-btn" onclick="searchAssets()">Search</button>
+                <button type="button" class="search-btn" style="background: #e2e8f0; color: #333;" onclick="resetFilters()">Reset</button>
+            </div>
+
+            <table>
+                <thead>
+                    <tr>
+                        <th>Asset Name</th>
+                        <th>Category</th>
+                        <th>Serial Number</th>
+                        <th>Lab Location</th>
+                        <th>Condition</th>
+                        <th>Status</th>
+                        <th>Action</th>
+                    </tr>
+                </thead>
+                <tbody id="assetsTable"></tbody>
+            </table>
+        </div>
+
+        <!-- TECHNICIAN DASHBOARD -->
+        <div id="technicianDashboard" class="content-section">
+            <div class="dashboard-grid">
+                <div class="dashboard-card">
+                    <h3>Total Assets</h3>
+                    <div class="number" id="totalAssetsCount">0</div>
+                </div>
+                <div class="dashboard-card">
+                    <h3>Available</h3>
+                    <div class="number" id="availableCount">0</div>
+                </div>
+                <div class="dashboard-card">
+                    <h3>Checked Out</h3>
+                    <div class="number" id="checkedOutCount">0</div>
+                </div>
+                <div class="dashboard-card">
+                    <h3>Overdue Items</h3>
+                    <div class="number" id="overdueCount">0</div>
+                </div>
+            </div>
+
+            <h3>Currently Checked Out Assets</h3>
+            <table>
+                <thead>
+                    <tr>
+                        <th>Asset Name</th>
+                        <th>Serial Number</th>
+                        <th>Student Number</th>
+                        <th>Student Name</th>
+                        <th>Checkout Date</th>
+                        <th>Due Date</th>
+                        <th>Status</th>
+                        <th>Action</th>
+                    </tr>
+                </thead>
+                <tbody id="checkedOutTable"></tbody>
+            </table>
+
+            <h3 style="margin-top: 30px;">Overdue Loans & Fines</h3>
+            <table>
+                <thead>
+                    <tr>
+                        <th>Loan ID</th>
+                        <th>Student Number</th>
+                        <th>Student Name</th>
+                        <th>Asset Name</th>
+                        <th>Due Date</th>
+                        <th>Fine Amount</th>
+                    </tr>
+                </thead>
+                <tbody id="overdueTable"></tbody>
+            </table>
+        </div>
+
+        <!-- CHECKOUT/RETURN -->
+        <div id="checkoutReturn" class="content-section">
+            <div class="form-container">
+                <h3>Process Checkout or Return</h3>
+                <div style="display: flex; flex-direction: column; gap: 15px;">
+                    <div class="form-group">
+                        <label for="techStudentNumber">Student Number</label>
+                        <input type="text" id="techStudentNumber" placeholder="Enter student number" required>
+                    </div>
+
+                    <div class="form-group">
+                        <label for="techAssetSerial">Asset Serial Number</label>
+                        <input type="text" id="techAssetSerial" placeholder="Enter asset serial or loan ID" required>
+                    </div>
+
+                    <div class="form-group">
+                        <label for="operationType">Operation</label>
+                        <select id="operationType" required>
+                            <option value="checkout">Checkout Asset</option>
+                            <option value="return">Return Asset</option>
+                        </select>
+                    </div>
+
+                    <button type="button" class="action-btn btn-reserve" onclick="processTransaction()">Process</button>
+                </div>
+            </div>
+        </div>
+
+        <!-- INVENTORY MANAGEMENT -->
+        <div id="inventoryMgmt" class="content-section">
+            <h3>Inventory Management</h3>
+            <table>
+                <thead>
+                    <tr>
+                        <th>Asset Name</th>
+                        <th>Category</th>
+                        <th>Serial Number</th>
+                        <th>Lab</th>
+                        <th>Condition</th>
+                        <th>Status</th>
+                        <th>Checked Out To</th>
+                        <th>Checkout Date</th>
+                        <th>Due Date</th>
+                        <th>Action</th>
+                    </tr>
+                </thead>
+                <tbody id="inventoryTable"></tbody>
+            </table>
+        </div>
+
+        <!-- REPORTS -->
+        <div id="reports" class="content-section">
+            <h3>Asset Utilization Report</h3>
+            <table>
+                <thead>
+                    <tr>
+                        <th>Asset Name</th>
+                        <th>Category</th>
+                        <th>Lab</th>
+                        <th>Times Borrowed</th>
+                        <th>Last Borrowed</th>
+                        <th>Avg Duration</th>
+                    </tr>
+                </thead>
+                <tbody id="utilizationTable"></tbody>
+            </table>
+        </div>
+    </div>
+</div>
+
+<!-- RESERVATION MODAL -->
+<div id="reservationModal" class="modal">
+    <div class="modal-content">
+        <button class="close-btn" onclick="closeModal()">×</button>
+        <h3>Reserve Asset</h3>
+        <div style="display: flex; flex-direction: column; gap: 15px;">
+            <div class="form-group">
+                <label for="pickupDate">Desired Pickup Date</label>
+                <input type="date" id="pickupDate" required>
+            </div>
+            <button type="button" class="action-btn btn-reserve" onclick="submitReservation()">Confirm Reservation</button>
+        </div>
+    </div>
+</div>
+
+<script>
+function handleLogin() {
+    const studentNumber = document.getElementById('studentNumber').value;
+    const password = document.getElementById('password').value;
+    const userType = document.getElementById('userType').value;
+    
+    if (!studentNumber || !password || !userType) {
+        document.getElementById('errorMessage').innerHTML = '❌ Please fill in all fields';
+        return;
+    }
+    
+    if (typeof loginUser === 'function') {
+        loginUser(studentNumber, password, userType);
+    }
+}
+
+document.addEventListener('DOMContentLoaded', function() {
+    const inputs = ['studentNumber', 'password', 'userType'];
+    inputs.forEach(id => {
+        const el = document.getElementById(id);
+        if (el) {
+            el.addEventListener('keypress', function(e) {
+                if (e.key === 'Enter') {
+                    handleLogin();
+                }
+            });
+        }
+    });
+});
+</script>
+
+<script src="app.js"></script>
+
+</body>
+</html>
