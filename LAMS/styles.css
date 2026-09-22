@@ -753,18 +753,13 @@ table tbody tr:last-child td {
     white-space: nowrap;
 }
 
-/* "Reports" / "Browse Tables" headings inside the picker */
-.report-nav-heading {
-    margin: 16px 0 4px;
-    font-size: 11px;
-    font-weight: 700;
-    letter-spacing: 1px;
-    text-transform: uppercase;
-    color: #666;
-}
-
-.report-nav-heading:first-child {
-    margin-top: 0;
+/* Browse Tables picks its table from a row above the panel rather than a side
+   column, so the table underneath gets the full width of the page. */
+.table-picker {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 8px;
+    margin-bottom: 20px;
 }
 
 /* Filter controls above a browsed table. Same look as the .search-bar on Browse

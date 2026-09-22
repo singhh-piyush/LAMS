@@ -191,11 +191,14 @@ other students' details. The SQL for each one is in `LAMS/server.js`, in the `RE
 5. Students with two or more late returns — `GROUP BY ... HAVING`
 6. Total maintenance cost per category
 
-### Browsing the tables
+## Browsing the tables
 
-Below the six reports the same page has a **Browse Tables** list, so the tables themselves can
-be looked at and narrowed down rather than only through a fixed report. Each one has the
-filters that are actually useful for it:
+The **Browse Tables** tab is the reports' counterpart: instead of six fixed questions it shows
+the tables themselves, picked from a row of buttons and narrowed down with filters. It is its
+own tab rather than a second list inside Reports so the table underneath gets the full width
+of the page - `Loan` is ten columns wide.
+
+Each table has the filters that are actually useful for it:
 
 | Table | Filters |
 |---|---|

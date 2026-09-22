@@ -91,7 +91,7 @@ function logout() {
 // ===========================================================================
 
 const ALL_SECTIONS = ['studentDashboard', 'browseAssets', 'technicianDashboard',
-                      'checkoutReturn', 'inventoryMgmt', 'reports'];
+                      'checkoutReturn', 'inventoryMgmt', 'reports', 'dataTables'];
 
 function setupNavigation(role) {
     const navTabs = document.getElementById('navTabs');
@@ -109,7 +109,8 @@ function setupNavigation(role) {
             { id: 'technicianDashboard', label: 'Technician Dashboard' },
             { id: 'checkoutReturn',      label: 'Checkout / Return' },
             { id: 'inventoryMgmt',       label: 'Inventory' },
-            { id: 'reports',             label: 'Reports' }
+            { id: 'reports',             label: 'Reports' },
+            { id: 'dataTables',          label: 'Browse Tables' }
           ];
 
     tabs.forEach((tab, index) => {
@@ -140,6 +141,7 @@ function switchTab(tabId, button) {
     else if (tabId === 'checkoutReturn')       loadCheckoutReturn();
     else if (tabId === 'inventoryMgmt')        loadInventory();
     else if (tabId === 'reports')              loadReportList();
+    else if (tabId === 'dataTables')           loadTableBrowser();
 }
 
 function emptyRow(tbody, columns, message) {
@@ -571,76 +573,94 @@ function removeAsset(assetId, assetName) {
 // REPORTS
 // ===========================================================================
 
-// The picker holds two groups: the six fixed reports, and the tables themselves
-// with a filter bar. Both render through the same code below, because the server
-// returns the same shape for either.
-let tableDefs = [];
-let currentSource = null;
+// Reports and the table browser are separate tabs with their own markup, but a
+// result set looks the same coming from either, so both draw through
+// renderResult below. These say which elements to draw into.
+const REPORT_VIEW = { title: 'reportTitle', count: 'reportCount',
+                      head:  'reportHead',  body:  'reportBody' };
+const TABLE_VIEW  = { title: 'tableTitle',  count: 'tableCount',
+                      head:  'tableHead',   body:  'tableBody' };
 
+function pickerButton(label, onClick) {
+    const btn = document.createElement('button');
+    btn.type = 'button';
+    btn.className = 'report-btn';
+    btn.textContent = label;
+    btn.onclick = onClick;
+    return btn;
+}
+
+function setActiveButton(picker, btn) {
+    picker.querySelectorAll('.report-btn').forEach(b => b.classList.remove('active'));
+    btn.classList.add('active');
+}
+
+// Build the list of report buttons, then run the first one.
 function loadReportList() {
-    Promise.all([
-        api('/reports').then(res => res.json()),
-        api('/tables').then(res => res.json())
-    ])
-    .then(([reports, tables]) => {
-        tableDefs = Array.isArray(tables) ? tables : [];
+    api('/reports')
+        .then(res => res.json())
+        .then(reports => {
+            const picker = document.getElementById('reportPicker');
+            picker.innerHTML = '';
 
-        const picker = document.getElementById('reportPicker');
-        picker.innerHTML = '';
+            let first = null;
+            reports.forEach(report => {
+                const btn = pickerButton(report.label, () => {
+                    setActiveButton(picker, btn);
+                    fetchRows('/reports/' + report.key, REPORT_VIEW,
+                              'This report returned no records');
+                });
+                picker.appendChild(btn);
+                if (!first) first = btn;
+            });
 
-        const first = addPickerGroup(picker, 'Reports', 'report', reports);
-        addPickerGroup(picker, 'Browse Tables', 'table', tableDefs);
-
-        if (first) first.click();
-    })
-    .catch(err => console.error('Report list error:', err));
+            if (first) first.click();
+        })
+        .catch(err => console.error('Report list error:', err));
 }
 
-// A heading plus one button per entry. Returns the first button so the page can
-// open something straight away.
-function addPickerGroup(picker, heading, kind, entries) {
-    if (!entries || entries.length === 0) return null;
+// ===========================================================================
+// BROWSE TABLES
+// ===========================================================================
 
-    const title = document.createElement('p');
-    title.className = 'report-nav-heading';
-    title.textContent = heading;
-    picker.appendChild(title);
+let tableDefs = [];
+let currentTable = null;
 
-    let firstBtn = null;
+// The server sends each table's filters with the list, so the bar can be built
+// without a second request per table.
+function loadTableBrowser() {
+    api('/tables')
+        .then(res => res.json())
+        .then(tables => {
+            tableDefs = Array.isArray(tables) ? tables : [];
 
-    entries.forEach(entry => {
-        const btn = document.createElement('button');
-        btn.type = 'button';
-        btn.className = 'report-btn';
-        btn.textContent = entry.label;
-        btn.onclick = () => {
-            document.querySelectorAll('.report-btn').forEach(b => b.classList.remove('active'));
-            btn.classList.add('active');
-            openSource(kind, entry.key);
-        };
-        picker.appendChild(btn);
-        if (!firstBtn) firstBtn = btn;
-    });
+            const picker = document.getElementById('tablePicker');
+            picker.innerHTML = '';
 
-    return firstBtn;
+            let first = null;
+            tableDefs.forEach(table => {
+                const btn = pickerButton(table.label, () => {
+                    setActiveButton(picker, btn);
+                    openTable(table.key);
+                });
+                picker.appendChild(btn);
+                if (!first) first = btn;
+            });
+
+            if (first) first.click();
+        })
+        .catch(err => console.error('Table list error:', err));
 }
 
-function openSource(kind, key) {
-    currentSource = { kind: kind, key: key };
-
-    if (kind === 'report') {
-        buildFilterBar(null);
-        return fetchRows('/reports/' + key, 'This report returned no records');
-    }
-
+function openTable(key) {
+    currentTable = key;
     buildFilterBar(tableDefs.find(t => t.key === key));
     runTableQuery();
 }
 
-// Build the filter controls for one table. Reports have none, so the bar is
-// emptied and hidden for them.
+// Build the filter controls for one table.
 function buildFilterBar(table) {
-    const bar = document.getElementById('reportFilters');
+    const bar = document.getElementById('tableFilters');
     bar.innerHTML = '';
 
     if (!table || !table.filters || table.filters.length === 0) {
@@ -696,38 +716,38 @@ function buildFilterBar(table) {
 // Send whatever the filter bar currently holds. Anything left blank is left out
 // of the query string, and the server then leaves that filter out of the WHERE.
 function runTableQuery() {
-    if (!currentSource || currentSource.kind !== 'table') return;
+    if (!currentTable) return;
 
     const parts = [];
-    document.querySelectorAll('#reportFilters [data-filter-key]').forEach(el => {
+    document.querySelectorAll('#tableFilters [data-filter-key]').forEach(el => {
         const value = el.value.trim();
         if (value !== '') {
             parts.push(encodeURIComponent(el.dataset.filterKey) + '=' + encodeURIComponent(value));
         }
     });
 
-    fetchRows('/tables/' + currentSource.key + (parts.length ? '?' + parts.join('&') : ''),
-              'No rows match these filters');
+    fetchRows('/tables/' + currentTable + (parts.length ? '?' + parts.join('&') : ''),
+              TABLE_VIEW, 'No rows match these filters');
 }
 
 // Column labels and types come back with the result, so one renderer handles
 // every report and every table without hardcoding a single column name.
-function fetchRows(path, emptyMessage) {
+function fetchRows(path, view, emptyMessage) {
     api(path)
         .then(res => res.json())
         .then(data => {
             if (data.error) return showAlert(data.error, 'error');
 
-            document.getElementById('reportTitle').textContent = data.title;
-            document.getElementById('reportCount').textContent =
+            document.getElementById(view.title).textContent = data.title;
+            document.getElementById(view.count).textContent =
                 data.rowCount + (data.rowCount === 1 ? ' record' : ' records');
 
-            const head = document.getElementById('reportHead');
+            const head = document.getElementById(view.head);
             head.innerHTML = '<tr>' + data.columns.map(c =>
                 '<th' + (c.numeric ? ' class="num"' : '') + '>' + esc(c.name) + '</th>'
             ).join('') + '</tr>';
 
-            const body = document.getElementById('reportBody');
+            const body = document.getElementById(view.body);
             body.innerHTML = '';
 
             if (data.rows.length === 0) {
@@ -743,7 +763,7 @@ function fetchRows(path, emptyMessage) {
                 body.appendChild(tr);
             });
         })
-        .catch(err => console.error('Report error:', err));
+        .catch(err => console.error('Result error:', err));
 }
 
 // Dates arrive as ISO strings and money as numeric strings; show both the way
