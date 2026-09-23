@@ -245,8 +245,11 @@ app.post('/api/forgot-password', async (req, res) => {
             const token = crypto.randomBytes(32).toString('hex');
             const tokenHash = crypto.createHash('sha256').update(token).digest('hex');
 
-            // Any earlier unused tokens for this user stop working.
-            await pool.query('DELETE FROM passwordreset WHERE userid = $1', [user.userid]);
+            // Earlier links keep working until they expire, so it does not matter
+            // which of several emails gets opened. Only dead ones are cleared out.
+            await pool.query(
+                'DELETE FROM passwordreset WHERE userid = $1 AND (used = TRUE OR expiresat <= CURRENT_TIMESTAMP)',
+                [user.userid]);
 
             // The database works out the expiry, not Node. ExpiresAt is a TIMESTAMP
             // WITHOUT TIME ZONE and the checks against it use CURRENT_TIMESTAMP, so a
@@ -307,15 +310,11 @@ app.post('/api/reset-password', async (req, res) => {
         );
 
         if (result.rows.length === 0) {
-            // Three different things land here, and saying so saves a lot of
-            // confusion: the commonest by far is having pressed the button twice
-            // and then opened the first email, because a new request deletes the
-            // old link. The message stays vague about which account it was for.
+            // The message stays vague about which account it was for.
             return res.json({
                 success: false,
-                message: 'That reset link no longer works. It has either expired, been used ' +
-                         'already, or been replaced by a newer one - only the most recent ' +
-                         'link works. Request a new one and open the latest email.'
+                message: 'That reset link no longer works. Links last one hour and stop ' +
+                         'working once a password has been changed. Request a new one.'
             });
         }
 
@@ -323,7 +322,8 @@ app.post('/api/reset-password', async (req, res) => {
         const newHash = await bcrypt.hash(password, 10);
 
         await pool.query('UPDATE users SET passwordhash = $1 WHERE userid = $2', [newHash, userId]);
-        await pool.query('UPDATE passwordreset SET used = TRUE WHERE tokenhash = $1', [tokenHash]);
+        // Every link this user was sent stops working, not just the one used.
+        await pool.query('UPDATE passwordreset SET used = TRUE WHERE userid = $1', [userId]);
 
         // Sign out whoever is logged in in this browser before answering. Without
         // this the reset page redirects to index.html, the page asks /api/me, and

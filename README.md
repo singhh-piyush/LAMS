@@ -132,9 +132,8 @@ startup. The line `Mail transport: mailtrap` should appear when it boots.
 Type `25116045` into the login box, press **Forgot your password?**, then refresh your
 Mailtrap inbox. The email appears there with the reset link in it.
 
-> **Only the newest link works.** Requesting a new one cancels the previous link, so if you
-> press the button twice, open the most recent email. Links also expire after one hour and
-> can only be used once.
+> **Any link you were sent works** for one hour, so it does not matter which email you open.
+> Once a password has been changed, every link for that account stops working.
 
 ## If the email never arrives
 
@@ -435,7 +434,9 @@ reset page redirects to the app, the app asks the server who is logged in, and a
 already sitting in the browser is restored — so on a shared lab machine, finishing a reset
 dropped you into the previous person's dashboard.
 
-The link is single-use and expires one hour after it is issued. Only a SHA-256 hash of the
+Each link expires one hour after it is issued. If the button is pressed more than once, every
+link sent in that hour works, so opening an older email is not a trap; the moment one of them
+is used, all of them stop working. Only a SHA-256 hash of the
 token is stored, so a copy of the database cannot be used to reset anyone's password. The
 endpoint gives the same answer whether or not the account exists, and does not repeat back
 which address it used, so it cannot be used to find out who has an account or to look up
