@@ -2,6 +2,9 @@
 //
 //   npm run setup-db
 //
+// Local PostgreSQL only. Never point this at the hosted Supabase database: the
+// script starts by dropping every table, so it would wipe the live data.
+//
 // Creates the lams_db database if it does not exist, then runs
 // lams_database_setup.sql against it. Saves doing it by hand in pgAdmin,
 // and means a fresh clone on any machine is two commands.

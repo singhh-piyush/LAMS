@@ -6,7 +6,7 @@ const { loadEnv } = require('./env');
 loadEnv();
 
 const express = require('express');
-const session = require('express-session');
+const cookieSession = require('cookie-session');
 const { Pool } = require('pg');
 const bcrypt = require('bcryptjs');
 const crypto = require('crypto');
@@ -22,13 +22,24 @@ const FINE_PER_DAY = 5;   // business rule: R5 for every day an item is late
 // ============================================================================
 // DATABASE
 // ============================================================================
-const pool = new Pool({
-    user:     process.env.DB_USER     || 'postgres',
-    host:     process.env.DB_HOST     || 'localhost',
-    database: process.env.DB_NAME     || 'lams_db',
-    password: process.env.DB_PASSWORD || 'postgres',
-    port: parseInt(process.env.DB_PORT || '5432', 10)
-});
+// Locally the DB_* values in .env point at your own PostgreSQL. When hosted,
+// DATABASE_URL points at Supabase instead, and nothing else changes. The hosted
+// connection has to be encrypted, and a serverless function should hold only a
+// few connections open, because many copies of it can run at once.
+const pool = process.env.DATABASE_URL
+    ? new Pool({
+        connectionString: process.env.DATABASE_URL,
+        ssl: { rejectUnauthorized: false },
+        max: 3,
+        connectionTimeoutMillis: 10000
+    })
+    : new Pool({
+        user:     process.env.DB_USER     || 'postgres',
+        host:     process.env.DB_HOST     || 'localhost',
+        database: process.env.DB_NAME     || 'lams_db',
+        password: process.env.DB_PASSWORD || 'postgres',
+        port: parseInt(process.env.DB_PORT || '5432', 10)
+    });
 
 pool.on('error', (err) => console.error('Unexpected database error:', err.message));
 
@@ -41,12 +52,36 @@ pool.on('error', (err) => console.error('Unexpected database error:', err.messag
 // sent and allowed credentials with it, which is the one combination the CORS spec
 // tells you not to use.
 app.use(express.json());
-app.use(session({
-    secret: process.env.SESSION_SECRET || 'lams-dev-secret-change-me',
-    resave: false,
-    saveUninitialized: false,
-    cookie: { httpOnly: true, maxAge: 1000 * 60 * 60 * 8 }   // 8 hours
+
+// The login is kept in a signed cookie rather than in the server's memory. When
+// hosted, every request can land on a different copy of the server, so memory
+// would forget who is logged in. The cookie is signed with SESSION_SECRET: the
+// browser can read it, but any change to it (say, role) breaks the signature
+// and the cookie is thrown away.
+const SESSION_MS = 1000 * 60 * 60 * 8;   // 8 hours
+
+// Vercel receives HTTPS and passes the request on as plain HTTP. Without this,
+// Express thinks the connection is insecure and refuses to set a secure cookie.
+app.set('trust proxy', 1);
+
+app.use(cookieSession({
+    name: 'lams.sid',
+    keys: [process.env.SESSION_SECRET || 'lams-dev-secret-change-me'],
+    maxAge: SESSION_MS,
+    httpOnly: true,
+    sameSite: 'lax',
+    secure: process.env.COOKIE_SECURE === 'true'   // true when hosted on HTTPS
 }));
+
+// A cookie's expiry is only enforced by the browser, so a copied cookie would
+// work forever. The login time is stored inside the signed cookie and checked here.
+app.use((req, res, next) => {
+    if (req.session && req.session.user &&
+        !(Date.now() - (req.session.startedAt || 0) < SESSION_MS)) {
+        req.session = null;
+    }
+    next();
+});
 
 // The pages live in public/ and are served from there. Serving __dirname instead
 // would hand out server.js, mailer.js and setup-db.js as plain text to anyone who
@@ -55,7 +90,7 @@ app.use(express.static(path.join(__dirname, 'public')));
 
 // Only a logged-in user may continue.
 function requireAuth(req, res, next) {
-    if (!req.session.user) {
+    if (!req.session || !req.session.user) {
         return res.status(401).json({ error: 'Not logged in' });
     }
     next();
@@ -65,7 +100,7 @@ function requireAuth(req, res, next) {
 // hiding a nav button in the browser is not access control, so every
 // technician-only route below is guarded here on the server.
 function requireTechnician(req, res, next) {
-    if (!req.session.user) {
+    if (!req.session || !req.session.user) {
         return res.status(401).json({ error: 'Not logged in' });
     }
     if (req.session.user.role !== 'technician') {
@@ -155,6 +190,7 @@ app.post('/api/login', async (req, res) => {
             role: role,
             studentNumber: user.studentnumber
         };
+        req.session.startedAt = Date.now();
 
         res.json({ success: true, ...req.session.user });
     } catch (error) {
@@ -164,12 +200,13 @@ app.post('/api/login', async (req, res) => {
 });
 
 app.post('/api/logout', (req, res) => {
-    req.session.destroy(() => res.json({ success: true }));
+    req.session = null;
+    res.json({ success: true });
 });
 
 // Lets the page restore a session after a refresh.
 app.get('/api/me', (req, res) => {
-    if (!req.session.user) return res.status(401).json({ error: 'Not logged in' });
+    if (!req.session || !req.session.user) return res.status(401).json({ error: 'Not logged in' });
     res.json(req.session.user);
 });
 
@@ -294,9 +331,8 @@ app.post('/api/reset-password', async (req, res) => {
         // reset on a shared machine dropped you into the previous person's
         // dashboard, which on a lab machine is usually the technician's.
         // A reset is exactly the point at which an old session should stop working.
-        req.session.destroy(() => {
-            res.json({ success: true, message: 'Password updated. You can now log in.' });
-        });
+        req.session = null;
+        res.json({ success: true, message: 'Password updated. You can now log in.' });
     } catch (error) {
         console.error('Reset password error:', error.message);
         res.status(500).json({ success: false, message: 'Server error' });
@@ -1628,7 +1664,11 @@ app.get('/api/tables/:key', requireTechnician, async (req, res) => {
 // ============================================================================
 // START
 // ============================================================================
-app.listen(PORT, async () => {
+// Vercel imports this file and runs the exported app itself, so it only listens
+// on a port when started directly with "npm start".
+module.exports = app;
+
+if (require.main === module) app.listen(PORT, async () => {
     console.log(`\nLAMS server running on ${BASE_URL}`);
     console.log(`Mail transport: ${MAIL_MODE}`);
 
