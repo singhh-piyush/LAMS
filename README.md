@@ -165,6 +165,46 @@ values.
 
 ---
 
+# Real email (Gmail)
+
+Mailtrap only *catches* mail. To have the reset email actually delivered to the student's
+real inbox, send it through a Gmail account instead. The project uses
+`darklingclips@gmail.com` for this.
+
+Gmail will not accept its normal password from an app — it needs an **App Password**:
+
+1. Sign in to the Gmail account and turn on **2-Step Verification**
+   (<https://myaccount.google.com/security>).
+2. Go to <https://myaccount.google.com/apppasswords>, type a name (we used `LAMS`) and press
+   **Create**. Google shows a 16-letter password once — copy it.
+3. In `.env`, change these lines:
+
+```
+MAIL_TRANSPORT=smtp
+MAIL_FROM=darklingclips@gmail.com
+SMTP_HOST=smtp.gmail.com
+SMTP_PORT=465
+SMTP_SECURE=true
+SMTP_USER=darklingclips@gmail.com
+SMTP_PASS=the_16_letter_app_password
+```
+
+4. Restart the server. It should say `Mail transport: smtp`.
+
+The email goes to the address stored for that account in the `Users` table — for example
+`22493903` resets to `22493903@dut4life.ac.za`. It comes from the Gmail address, and the
+first few may land in spam.
+
+**Never put the App Password anywhere except `.env`.** Get it from Piyush privately rather than
+through the group chat. If it ever leaks, delete it on the App Passwords page and make a new
+one — the old one stops working immediately.
+
+If Gmail rejects the login, the terminal shows
+`Mail send failed (smtp): Invalid login: 535-5.7.8 Username and Password not accepted` and
+prints the link instead, exactly like the Mailtrap case above.
+
+---
+
 # If something goes wrong
 
 | What you see | What it means |

@@ -56,6 +56,10 @@ If you want the email to land in a real inbox you can look at, see the
 about two minutes. Mailtrap's sandbox catches the mail so nothing is ever
 delivered to an actual person.
 
+To send a REAL email to the student's inbox, use Gmail instead - see
+"Real email (Gmail)" in README.md. It needs the Gmail App Password, which
+goes in .env only and is never committed.
+
 
 TROUBLESHOOTING
 ---------------

@@ -201,7 +201,7 @@ INSERT INTO Users (StudentNumber, FirstName, LastName, Email, PhoneNumber, UserT
 ('25014682', 'Dovashen', 'Govender',    'dovashen.govender@dut.ac.za',  '0712345679', 'Student',    '$2a$10$znFoYQy7NCuMxwCRuZx5He9txE.Wc/K/QozQ7UmflZrRQ8u.w49.u'),
 ('25033893', 'Siphelele','Ndzimande',   'siphelele.ndzimande@dut.ac.za','0712345680', 'Student',    '$2a$10$znFoYQy7NCuMxwCRuZx5He9txE.Wc/K/QozQ7UmflZrRQ8u.w49.u'),
 ('25067628', 'Kynan',    'Poliah',      'kynan.poliah@dut.ac.za',       '0712345681', 'Student',    '$2a$10$znFoYQy7NCuMxwCRuZx5He9txE.Wc/K/QozQ7UmflZrRQ8u.w49.u'),
-('22493903', 'Piyush',   'Singh',       'piyush.singh@dut.ac.za',       '0712345682', 'Student',    '$2a$10$znFoYQy7NCuMxwCRuZx5He9txE.Wc/K/QozQ7UmflZrRQ8u.w49.u'),
+('22493903', 'Piyush',   'Singh',       '22493903@dut4life.ac.za',      '0712345682', 'Student',    '$2a$10$znFoYQy7NCuMxwCRuZx5He9txE.Wc/K/QozQ7UmflZrRQ8u.w49.u'),
 ('25041441', 'Rivell',   'Venketsamy',  'rivell.venketsamy@dut.ac.za',  '0712345683', 'Student',    '$2a$10$znFoYQy7NCuMxwCRuZx5He9txE.Wc/K/QozQ7UmflZrRQ8u.w49.u'),
 ('25000001', 'John',     'Student',     'john.student@dut.ac.za',       '0712345684', 'Student',    '$2a$10$znFoYQy7NCuMxwCRuZx5He9txE.Wc/K/QozQ7UmflZrRQ8u.w49.u'),
 ('25000002', 'Sarah',    'Lewis',       'sarah.lewis@dut.ac.za',        '0712345685', 'Student',    '$2a$10$znFoYQy7NCuMxwCRuZx5He9txE.Wc/K/QozQ7UmflZrRQ8u.w49.u'),
