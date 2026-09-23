@@ -1,0 +1,8 @@
+# Files the "vercel" command must never upload.
+# .env holds passwords - the hosted site gets its settings from the Vercel dashboard.
+.env
+.env.*
+!.env.example
+node_modules
+dir
+*.log

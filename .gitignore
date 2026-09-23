@@ -7,6 +7,9 @@ node_modules/
 .env.local
 *.local
 
+# Vercel's link to the hosted project (made by the "vercel" command)
+.vercel
+
 # Editor / OS noise
 .vscode/
 .idea/

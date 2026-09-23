@@ -474,6 +474,40 @@ one folder, so `server.js`, `mailer.js` and `.env` are not reachable over HTTP.
   return something overdue and show the fine appear → settle that fine → open a report → show
   a 403 by requesting a technician URL while logged in as a student.
 
+# The hosted version
+
+The live site is **<https://lams-taupe.vercel.app>**. It is the same code as this repo, run on
+Vercel, with the database on Supabase.
+
+| | Your PC | Hosted |
+|---|---|---|
+| Server | `npm start` | Vercel (London region) |
+| Database | Your PostgreSQL, from the `DB_*` lines in `.env` | Supabase, from `DATABASE_URL` |
+| Settings | `LAMS/.env` | Vercel → lams → Settings → Environment Variables |
+| Email | Whatever `MAIL_TRANSPORT` you chose | Gmail (`darklingclips@gmail.com`) |
+
+The code decides which database to use by itself: if `DATABASE_URL` is set it uses Supabase,
+otherwise it uses the `DB_*` lines. Nothing needs changing to run it locally.
+
+**The hosted database is separate from yours.** Anything done on the live site stays in
+Supabase; anything done on your PC stays on your PC. Do not run `npm run setup-db` against
+Supabase — it starts by dropping every table.
+
+**Updating the live site** — from the `LAMS` folder, with access to the Vercel project:
+
+```
+vercel deploy --prod
+```
+
+The `.vercelignore` file stops your `.env` from being uploaded. The hosted site's passwords
+live only in Vercel's settings.
+
+**Supabase is locked down.** Supabase gives every table a public web API by default. Row Level
+Security is switched on for all nine tables and the public roles have no access to any table
+or view, so the only way in is the server's own database login.
+
+---
+
 # Known limitations
 
 - Fines are raised and settled in the system, but there is no payment integration — pressing
@@ -483,4 +517,5 @@ one folder, so `server.js`, `mailer.js` and `.env` are not reachable over HTTP.
   loaded with the seed data.
 - `asset.status` duplicates what the loan table already implies. It is kept for speed, and the
   partial unique index above is what stops the two disagreeing.
-- Sessions are held in memory, so restarting the server logs everyone out.
+- Logins are kept in a signed cookie, not on the server, so one person's login cannot be
+  cancelled on its own. Changing `SESSION_SECRET` logs everyone out.
